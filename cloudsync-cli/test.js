@@ -5,11 +5,20 @@
  */
 
 import { execSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { existsSync, readFileSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const CLI_PATH = join(process.cwd(), 'bin', 'cloudsync.js');
-const TEST_DIR = join(process.cwd(), 'test-workspace');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const CLI_PATH = join(__dirname, 'bin', 'cloudsync.js');
+const TEST_DIR = join(__dirname, 'test-workspace');
+
+// Ensure test-workspace directory exists
+if (!existsSync(TEST_DIR)) {
+  mkdirSync(TEST_DIR, { recursive: true });
+}
 
 function run(cmd, dir = process.cwd()) {
   try {
