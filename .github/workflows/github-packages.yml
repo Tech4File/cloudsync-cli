@@ -109,4 +109,4 @@ jobs:
       - name: Test installed package
         run: |
           cloudsync doctor
-          cloudsync --help | head -20
+          cloudsync --help
