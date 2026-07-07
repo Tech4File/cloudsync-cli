@@ -86,8 +86,11 @@ jobs:
 
       - name: Install published package
         run: |
+          sleep 15
           npm install -g @tech4file/cloudsync-cli
           cloudsync --version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Test installed package
         run: |
