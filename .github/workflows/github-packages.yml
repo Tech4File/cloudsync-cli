@@ -72,6 +72,9 @@ jobs:
     name: Verify Published Package
     runs-on: ubuntu-latest
     needs: [publish-gpr]
+    permissions:
+      contents: read
+      packages: read
     
     steps:
       - name: Checkout
@@ -95,9 +98,11 @@ jobs:
 
       - name: Install published package
         run: |
+          mkdir -p ~/.npm-global
+          npm config set prefix '~/.npm-global'
+          echo "$HOME/.npm-global/bin" >> $GITHUB_PATH
           sleep 15
           npm install -g @tech4file/cloudsync-cli
-          cloudsync --version
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
