@@ -1,23 +1,21 @@
-# CloudSync CLI - Workspace Root Git Ignore
-
-# Local CloudSync internal data directories
+# CloudSync local data directories
 .cloudsync/
 **/.cloudsync/
 
-# Test directories and files
-clone-test/
-test-workspace/.env
-test-workspace/.replit
-test-workspace/node_modules/
+# Build artifacts
+*.tgz
+dist/
+build/
 
-# IDE files at the workspace root
+# IDE
 .vscode/
 .idea/
 
-# Local backup files
-cloudsync-cli/.git.bak/
-
-# Local environment overrides
+# Environment files
 .env
 .env.local
 .env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import archiver from 'archiver';
 import { Client as SSHClient } from 'ssh2';
 import crypto from 'crypto';
+import { logOperation } from '../../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -23,8 +24,8 @@ const uploadCommand = new Command('upload')
   .option('--all', 'Stage and upload all changes', false)
   .option('--force', 'Force overwrite remote files', false)
   .option('--compress <method>', 'Compression method (zip/lz4/zstd)', 'zip')
-  .option('--chunk-size <MB>', 'Chunk size in MB for large files', parseFloat, 10)
-  .option('--protocol <proto>', 'Transport protocol', /^(ssh|sftp|rsync|websocket|pipe)$/i, 'ssh')
+  .option('--chunk-size <MB>', 'Chunk size in MB for large files', (v) => parseFloat(v), 10)
+  .option('--protocol <proto>', 'Transport protocol', /^(ssh|scp|sftp|rsync|websocket|ws|pipe|hybrid|zip|chunked|http)$/i, 'ssh')
   .option('--verbose', 'Show detailed transfer progress', false)
   .option('--dry-run', 'Preview without transferring', false)
   .option('--profile <name>', 'Config profile to use', 'default')
@@ -107,6 +108,7 @@ const uploadCommand = new Command('upload')
     
     try {
       await uploadWithProtocol(profile, archivePath, options, verbose);
+      logOperation('upload', `Uploaded ${filesToUpload.length} files via ${options.protocol}`, { files: filesToUpload.map(f => relative(workspace, f)), versionId, protocol: options.protocol });
       console.log(chalk.green('\n✅ Upload complete!'));
       console.log(chalk.gray(`   Version: ${versionId}`));
       console.log(chalk.gray(`   Files: ${filesToUpload.length}`));

@@ -29,7 +29,6 @@
     "sftp",
     "rsync",
     "cloud",
-    "replit",
     "version-control",
     "git",
     "file-transfer",
@@ -67,27 +66,14 @@
     "type": "github",
     "url": "https://github.com/sponsors/Tech4File"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "public"
-  },
   "dependencies": {
-    "archiver": "^6.0.1",
+    "archiver": "^7.0.1",
     "chalk": "^5.3.0",
-    "commander": "^11.1.0",
-    "decompress": "^4.2.1",
+    "commander": "^12.1.0",
     "diff-match-patch": "^1.0.5",
-    "dotenv": "^16.3.1",
-    "figlet": "^1.7.0",
-    "ini": "^4.1.1",
-    "js-yaml": "^4.1.0",
-    "lz4js": "^0.2.0",
-    "open": "^9.1.0",
-    "ora": "^7.0.1",
+    "figlet": "^1.11.0",
     "ssh2": "^1.15.0",
-    "uuid": "^9.0.1",
-    "ws": "^8.14.2",
-    "brotli": "^1.1.0"
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "eslint": "^8.54.0",

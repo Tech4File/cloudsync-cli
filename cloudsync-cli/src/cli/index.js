@@ -25,7 +25,7 @@ program
   .name('cloudsync')
   .description(chalk.cyan('🔒 CloudSync-CLI - Secure cloud-to-local synchronization with Git-like version control'))
   .version(packageJson.version, '-v, --version', 'Output the current version')
-  .option('-v, --verbose', 'Enable verbose logging', false)
+  .option('--verbose', 'Enable verbose logging', false)
   .option('-q, --quiet', 'Suppress output messages', false)
   .option('-c, --config <path>', 'Custom config file path')
   .option('--no-color', 'Disable colored output');
@@ -39,6 +39,8 @@ function showBanner() {
   console.log(chalk.gray('━'.repeat(60)));
   console.log();
 }
+
+
 
 // Import command handlers
 import initCommand from './commands/init.js';
@@ -97,10 +99,37 @@ program
     }
   });
 
+
+// Add examples to --help output
+program.on('--help', () => {
+  console.log('');
+  console.log(chalk.cyan('📖 Quick Start'));
+  console.log(chalk.gray('━'.repeat(60)));
+  console.log('  cloudsync init --host server.com --user admin');
+  console.log('  cloudsync stage .env config.json');
+  console.log('  cloudsync commit "Update config"');
+  console.log('  cloudsync upload --include .env --exclude node_modules');
+  console.log('  cloudsync download --latest');
+  console.log('  cloudsync sync --dry-run');
+  console.log('');
+  console.log(chalk.cyan('💡 More Examples'));
+  console.log(chalk.gray('━'.repeat(60)));
+  console.log('  cloudsync upload --protocol rsync --include .env');
+  console.log('  cloudsync sync --watch --interval 30');
+  console.log('  cloudsync share . --expires 30');
+  console.log('  cloudsync port 3000:3000');
+  console.log('  cloudsync init --profile staging --host staging.example.com');
+  console.log('');
+  console.log(chalk.cyan('🔗 Full documentation:'));
+  console.log(chalk.white('  https://github.com/Tech4File/cloudsync-cli#readme'));
+  console.log('');
+});
+
 // Parse arguments
 program.parse(process.argv);
 
 // Show banner on --help
+// Show banner when no args
 if (process.argv.length === 2) {
   showBanner();
 }

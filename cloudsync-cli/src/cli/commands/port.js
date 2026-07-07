@@ -28,7 +28,7 @@ const portCommand = new Command('port')
     }
 
     // Parse port mapping
-    const [localPort, remotePort] = mapping.split(':').map(p => parseInt(p));
+    const [localPort, remotePort] = mapping.split(':').map(p => parseInt(p, 10));
     
     if (isNaN(localPort) || isNaN(remotePort)) {
       console.log(chalk.red('❌ Invalid port mapping. Use format: local:remote (e.g., 3000:3000)'));

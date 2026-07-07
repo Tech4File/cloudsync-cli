@@ -62,9 +62,6 @@ temp/
 .node_repl_history
 
 # Testing
-test-workspace/
-clone-test/
-playground/
 
 # Documentation artifacts
 *.bak

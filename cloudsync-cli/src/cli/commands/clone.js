@@ -15,7 +15,7 @@ const cloneCommand = new Command('clone')
   .description('📥 Clone a remote workspace to local')
   .argument('<remote>', 'Remote workspace identifier (user@host:path)')
   .option('--directory <path>', 'Target directory', process.cwd())
-  .option('--depth <n>', 'Clone depth (full=0)', parseInt, 0)
+  .option('--depth <n>', 'Clone depth (full=0)', (v) => parseInt(v, 10), 0)
   .option('--profile <name>', 'Config profile to use', 'default')
   .option('--verbose', 'Show detailed progress', false)
   .action(async (remote, options) => {

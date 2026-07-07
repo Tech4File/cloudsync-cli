@@ -7,6 +7,7 @@ import chalk from 'chalk';
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
+import { logOperation } from '../../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -87,6 +88,7 @@ const downloadCommand = new Command('download')
     
     try {
       await downloadWithProtocol(profile, options, verbose);
+      logOperation('download', `Downloaded files from ${profile.host}`);
       console.log(chalk.green('\n✅ Download complete!'));
       
       // Update local status
