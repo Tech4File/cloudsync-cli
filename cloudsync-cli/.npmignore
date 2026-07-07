@@ -1,0 +1,43 @@
+# Source code (published separately)
+src/
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+
+# Documentation source
+*.md
+
+# Tests
+test.js
+__tests__/
+
+# Development tools
+.eslintrc*
+.jshintrc*
+.prettierrc*
+.editorconfig
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+
+# Local config
+.cloudsync/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary
+tmp/
+temp/
+test-workspace/
+clone-test/

@@ -1,0 +1,383 @@
+name: Release & Build Executables
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  release:
+    types: [created, published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., 1.0.0)'
+        required: false
+        type: string
+
+jobs:
+  # ============================================
+  # BUILD WINDOWS EXECUTABLE
+  # ============================================
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64]
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pkg
+        run: npm install -g pkg@5.8.1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows Executable
+        run: |
+          pkg bin/cloudsync.js -t node18-win-x64 -o cloudsync.exe --compress GZip
+          pkg bin/cloudsync.js -t node18-win-x64 -o cloudsync-portable.exe --no-bytecode --public
+
+      - name: Create installer script
+        run: |
+          @echo off
+          echo CloudSync-CLI Windows Installer
+          echo =============================
+          echo.
+          echo Installing CloudSync-CLI...
+          echo.
+          
+          :: Create installation directory
+          if not exist "%LOCALAPPDATA%\CloudSync-CLI" mkdir "%LOCALAPPDATA%\CloudSync-CLI"
+          
+          :: Copy executable
+          copy cloudsync.exe "%LOCALAPPDATA%\CloudSync-CLI\"
+          copy cloudsync-portable.exe "%LOCALAPPDATA%\CloudSync-CLI\"
+          
+          :: Add to PATH
+          setx PATH "%PATH%;%LOCALAPPDATA%\CloudSync-CLI" /M
+          
+          :: Create start menu shortcut
+          powershell -Command "$s = (New-Object -COM WScript.Shell).CreateShortcut('%PROGRAMDATA%\Microsoft\Windows\Start Menu\Programs\CloudSync-CLI.lnk'); $s.TargetPath = '%LOCALAPPDATA%\CloudSync-CLI\cloudsync.exe'; $s.WorkingDirectory = '%LOCALAPPDATA%\CloudSync-CLI'; $s.Save()"
+          
+          echo.
+          echo Installation complete!
+          echo Please restart your terminal and run: cloudsync --version
+          echo.
+          pause
+          > install.bat
+
+      - name: Upload Windows EXE
+        uses: actions/upload-release-asset@v1
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./cloudsync.exe
+          asset_name: cloudsync-windows-x64.exe
+          asset_content_type: application/octet-stream
+
+      - name: Upload Windows Installer
+        uses: actions/upload-release-asset@v1
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./install.bat
+          asset_name: CloudSync-Setup.bat
+          asset_content_type: application/bat
+
+      - name: Upload artifacts (non-release)
+        uses: actions/upload-artifact@v4
+        if: github.event_name != 'release'
+        with:
+          name: cloudsync-windows-exe
+          path: |
+            cloudsync.exe
+            cloudsync-portable.exe
+            install.bat
+          retention-days: 30
+
+  # ============================================
+  # BUILD LINUX BINARY
+  # ============================================
+  build-linux:
+    name: Build Linux Binary
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pkg
+        run: npm install -g pkg@5.8.1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Linux Executable
+        run: pkg bin/cloudsync.js -t node18-linux-x64 -o cloudsync
+
+      - name: Make executable
+        run: chmod +x cloudsync
+
+      - name: Test executable
+        run: ./cloudsync --version
+
+      - name: Upload Linux binary
+        uses: actions/upload-release-asset@v1
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./cloudsync
+          asset_name: cloudsync-linux-x64
+          asset_content_type: application/octet-stream
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: github.event_name != 'release'
+        with:
+          name: cloudsync-linux-binary
+          path: ./cloudsync
+          retention-days: 30
+
+  # ============================================
+  # BUILD MACOS BINARY
+  # ============================================
+  build-macos:
+    name: Build macOS Binary
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pkg
+        run: npm install -g pkg@5.8.1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS Executable
+        run: pkg bin/cloudsync.js -t node18-macos-x64 -o cloudsync
+
+      - name: Make executable
+        run: chmod +x cloudsync
+
+      - name: Test executable
+        run: ./cloudsync --version
+
+      - name: Upload macOS binary
+        uses: actions/upload-release-asset@v1
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./cloudsync
+          asset_name: cloudsync-macos-x64
+          asset_content_type: application/octet-stream
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: github.event_name != 'release'
+        with:
+          name: cloudsync-macos-binary
+          path: ./cloudsync
+          retention-days: 30
+
+  # ============================================
+  # CREATE GITHUB RELEASE
+  # ============================================
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux, build-macos]
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    if: github.event_name == 'release'
+    
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================
+  # PUBLISH TO GITHUB PACKAGES
+  # ============================================
+  publish-gpr:
+    name: Publish to GitHub Packages
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux, build-macos]
+    if: github.event_name == 'release'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@tech4file'
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update package.json version
+        run: |
+          npm pkg set version=${{ steps.version.outputs.VERSION }}
+          npm pkg set name="@tech4file/cloudsync-cli"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release notes
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./README.md
+          asset_name: README.md
+          asset_content_type: text/markdown
+
+  # ============================================
+  # CREATE INNO SETUP SCRIPT (Windows Installer)
+  # ============================================
+  create-inno-setup:
+    name: Create Inno Setup Script
+    runs-on: windows-latest
+    needs: [build-windows]
+    if: github.event_name == 'release'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: cloudsync-windows-exe
+          path: .
+
+      - name: Create Inno Setup Script
+        run: |
+          @"
+          ; CloudSync-CLI Inno Setup Script
+          ; This script creates a Windows installer for CloudSync-CLI
+
+          [Setup]
+          AppName=CloudSync-CLI
+          AppVersion=${{ github.ref_name }}
+          AppPublisher=Tech4File
+          AppPublisherURL=https://github.com/Tech4File/cloudsync-cli
+          AppSupportURL=https://github.com/Tech4File/cloudsync-cli/releases
+          AppDir={pf}\CloudSync-CLI
+          DefaultDirName={autopf}\CloudSync-CLI
+          DefaultGroupName=CloudSync-CLI
+          OutputDir=output
+          OutputBaseFilename=CloudSync-Setup-${{ github.ref_name }}
+          Compression=lzma2
+          SolidCompression=yes
+          WizardStyle=modern
+          PrivilegesRequired=admin
+          ArchitecturesAllowed=x64
+          ArchitecturesInstallIn64BitMode=x64
+
+          [Languages]
+          Name: "english"; MessagesFile: "compiler:Default.isl"
+
+          [Tasks]
+          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+          Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
+
+          [Files]
+          Source: "cloudsync.exe"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "cloudsync-portable.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+          [Icons]
+          Name: "{group}\CloudSync-CLI"; Filename: "{app}\cloudsync.exe"
+          Name: "{group}\{cm:UninstallProgram,CloudSync-CLI}"; Filename: "{uninstallexe}"
+          Name: "{autodesktop}\CloudSync-CLI"; Filename: "{app}\cloudsync.exe"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\cloudsync.exe"; Description: "{cm:LaunchProgram,CloudSync-CLI}"; Flags: nowait postinstall skipifsilent
+
+          [Registry]
+          Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: string; ValueName: "Path"; ValueData: "{app};{olddata}"; Flags: preservestringtype; Check: NeedsAddPath('{app}')
+          "@ | Out-File -FilePath "CloudSync.iss" -Encoding UTF8
+
+      - name: Upload Inno Setup Script
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./CloudSync.iss
+          asset_name: CloudSync.iss
+          asset_content_type: text/plain
+
+  # ============================================
+  # BUILD CHECKSUM FILES
+  # ============================================
+  checksums:
+    name: Generate Checksums
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux, build-macos]
+    if: github.event_name == 'release'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd artifacts
+          find . -type f -exec sha256sum {} \; > checksums.txt
+          cat checksums.txt
+
+      - name: Upload checksums
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: artifacts/checksums.txt

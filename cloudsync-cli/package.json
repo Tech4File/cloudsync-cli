@@ -16,9 +16,9 @@
     "format": "prettier --write \"**/*.js\" || true",
     "format:check": "prettier --check \"**/*.js\" || true",
     "build": "echo 'Build complete - CLI is ready to use'",
-    "pkg:linux": "pkg . -t node18-linux-x64 -o dist/cloudsync-linux",
-    "pkg:macos": "pkg . -t node18-macos-x64 -o dist/cloudsync-macos",
-    "pkg:win": "pkg . -t node18-win-x64 -o dist/cloudsync-win.exe",
+    "pkg:linux": "pkg bin/cloudsync.js -t node18-linux-x64 -o dist/cloudsync-linux",
+    "pkg:macos": "pkg bin/cloudsync.js -t node18-macos-x64 -o dist/cloudsync-macos",
+    "pkg:win": "pkg bin/cloudsync.js -t node18-win-x64 -o dist/cloudsync-win.exe",
     "pkg:all": "npm run pkg:linux && npm run pkg:macos && npm run pkg:win",
     "postinstall": "echo 'CloudSync-CLI installed successfully!'"
   },
@@ -39,12 +39,14 @@
     "configuration",
     "environment",
     "dotenv",
-    "secure"
+    "secure",
+    "cloud-sync",
+    "synchronization"
   ],
   "author": {
     "name": "CloudSync Team",
     "email": "team@cloudsync.dev",
-    "url": "https://cloudsync.dev"
+    "url": "https://github.com/Tech4File"
   },
   "contributors": [
     {
@@ -55,16 +57,19 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Tech4File/cloudsync-cli.git"
+    "url": "git+https://github.com/Tech4File/cloudsync-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/Tech4File/cloudsync-cli/issues",
-    "email": "bugs@cloudsync.dev"
+    "url": "https://github.com/Tech4File/cloudsync-cli/issues"
   },
-  "homepage": "https://cloudsync.dev",
+  "homepage": "https://github.com/Tech4File/cloudsync-cli#readme",
   "funding": {
-    "type": "opencollective",
-    "url": "https://opencollective.com/cloudsync"
+    "type": "github",
+    "url": "https://github.com/sponsors/Tech4File"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
   },
   "dependencies": {
     "archiver": "^6.0.1",

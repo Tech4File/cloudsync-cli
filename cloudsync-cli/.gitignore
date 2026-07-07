@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.exe
+*.zip
+*.tar.gz
+
+# Test outputs
+coverage/
+.nyc_output/
+
+# IDE & Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# CloudSync local data
+.cloudsync/
+!.cloudsync/.gitkeep
+
+# Cache
+.cache/
+.turbo/
+.eslintcache
+*.tsbuildinfo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Secrets and keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Debug
+.node_repl_history
+
+# Testing
+test-workspace/
+clone-test/
+playground/
+
+# Documentation artifacts
+*.bak
+*.orig

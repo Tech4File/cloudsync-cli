@@ -4,8 +4,11 @@
 
 ![CloudSync Banner](https://img.shields.io/badge/CloudSync-CLI-blue?style=for-the-badge)
 [![npm version](https://img.shields.io/npm/v/cloudsync-cli.svg?style=for-the-badge)](https://www.npmjs.com/package/cloudsync-cli)
+[![GitHub package version](https://img.shields.io/github/package-json/v/Tech4File/cloudsync-cli?style=for-the-badge)](https://github.com/Tech4File/cloudsync-cli/packages)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen?style=for-the-badge)](https://nodejs.org/)
+[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/Tech4File/cloudsync-cli/release.yml?style=for-the-badge)](https://github.com/Tech4File/cloudsync-cli/actions)
+[![GitHub Downloads](https://img.shields.io/github/downloads/Tech4File/cloudsync-cli/total?style=for-the-badge)](https://github.com/Tech4File/cloudsync-cli/releases)
 
 **An open-source, Git-like version control CLI for secure cloud-to-local synchronization via encrypted SSH tunnels**
 
