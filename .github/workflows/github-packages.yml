@@ -84,6 +84,15 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           scope: '@tech4file'
 
+      - name: Configure npm for GitHub Packages
+        run: |
+          cat <<EOF > ~/.npmrc
+          @tech4file:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}
+          EOF
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install published package
         run: |
           sleep 15
