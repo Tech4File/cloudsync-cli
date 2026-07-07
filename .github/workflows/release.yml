@@ -23,6 +23,9 @@ jobs:
     strategy:
       matrix:
         arch: [x64]
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     
     steps:
       - name: Checkout
@@ -80,7 +83,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./cloudsync.exe
+          asset_path: ./cloudsync-cli/cloudsync.exe
           asset_name: cloudsync-windows-x64.exe
           asset_content_type: application/octet-stream
 
@@ -91,7 +94,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./install.bat
+          asset_path: ./cloudsync-cli/install.bat
           asset_name: CloudSync-Setup.bat
           asset_content_type: application/bat
 
@@ -101,9 +104,9 @@ jobs:
         with:
           name: cloudsync-windows-exe
           path: |
-            cloudsync.exe
-            cloudsync-portable.exe
-            install.bat
+            cloudsync-cli/cloudsync.exe
+            cloudsync-cli/cloudsync-portable.exe
+            cloudsync-cli/install.bat
           retention-days: 30
 
   # ============================================
@@ -112,6 +115,9 @@ jobs:
   build-linux:
     name: Build Linux Binary
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     
     steps:
       - name: Checkout
@@ -144,7 +150,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./cloudsync
+          asset_path: ./cloudsync-cli/cloudsync
           asset_name: cloudsync-linux-x64
           asset_content_type: application/octet-stream
 
@@ -153,7 +159,7 @@ jobs:
         if: github.event_name != 'release'
         with:
           name: cloudsync-linux-binary
-          path: ./cloudsync
+          path: ./cloudsync-cli/cloudsync
           retention-days: 30
 
   # ============================================
@@ -162,6 +168,9 @@ jobs:
   build-macos:
     name: Build macOS Binary
     runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     
     steps:
       - name: Checkout
@@ -194,7 +203,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./cloudsync
+          asset_path: ./cloudsync-cli/cloudsync
           asset_name: cloudsync-macos-x64
           asset_content_type: application/octet-stream
 
@@ -203,7 +212,7 @@ jobs:
         if: github.event_name != 'release'
         with:
           name: cloudsync-macos-binary
-          path: ./cloudsync
+          path: ./cloudsync-cli/cloudsync
           retention-days: 30
 
   # ============================================
@@ -236,6 +245,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-windows, build-linux, build-macos]
     if: github.event_name == 'release'
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     
     steps:
       - name: Checkout
@@ -271,7 +283,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./README.md
+          asset_path: ./cloudsync-cli/README.md
           asset_name: README.md
           asset_content_type: text/markdown
 
@@ -326,8 +338,8 @@ jobs:
           Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
 
           [Files]
-          Source: "cloudsync.exe"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "cloudsync-portable.exe"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "cloudsync-cli\cloudsync.exe"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "cloudsync-cli\cloudsync-portable.exe"; DestDir: "{app}"; Flags: ignoreversion
 
           [Icons]
           Name: "{group}\CloudSync-CLI"; Filename: "{app}\cloudsync.exe"

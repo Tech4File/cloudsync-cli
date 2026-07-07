@@ -12,6 +12,9 @@ jobs:
   publish-gpr:
     name: Publish to GitHub Packages
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     
     permissions:
       contents: read
@@ -27,6 +30,8 @@ jobs:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
           scope: '@tech4file'
+          cache: 'npm'
+          cache-dependency-path: cloudsync-cli/package-lock.json
 
       - name: Configure npm for GitHub Packages
         run: |

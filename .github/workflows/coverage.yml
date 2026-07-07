@@ -13,6 +13,9 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     
     steps:
       - name: Checkout
@@ -23,6 +26,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: cloudsync-cli/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -38,7 +42,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
-          files: ./coverage/lcov.info
+          files: ./cloudsync-cli/coverage/lcov.info
           fail_ci_if_error: false
           verbose: true
 
@@ -48,6 +52,9 @@ jobs:
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     
     steps:
       - name: Checkout
@@ -58,6 +65,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: cloudsync-cli/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -74,6 +82,9 @@ jobs:
   dependency-analysis:
     name: Dependency Analysis
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     
     steps:
       - name: Checkout

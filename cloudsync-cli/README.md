@@ -553,7 +553,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 **Made with ❤️ for developers who value security and simplicity**
 
-[![Star on GitHub](https://img.shields.io/github/stars/cloudsync/cli?style=social)](https://github.com/Tech4File/cloudsync-cli)
-[![Tweet](https://img.shields.io/twitter/url?style=social&url=https%3A%2F%2Fgithub.com%2Fcloudsync%2Fcli)](https://twitter.com/intent/tweet?text=Check%20out%20CloudSync-CLI%20-%20A%20secure%2C%20Git-like%20tool%20for%20syncing%20configs%20to%20cloud%20environments&url=https%3A%2F%2Fgithub.com%2Fcloudsync%2Fcli)
+[![Star on GitHub](https://img.shields.io/github/stars/Tech4File/cloudsync-cli?style=social)](https://github.com/Tech4File/cloudsync-cli)
+[![Tweet](https://img.shields.io/twitter/url?style=social&url=https%3A%2F%2Fgithub.com%2FTech4File%2Fcloudsync-cli)](https://twitter.com/intent/tweet?text=Check%20out%20CloudSync-CLI%20-%20A%20secure%2C%20Git-like%20tool%20for%20syncing%20configs%20to%20cloud%20environments&url=https%3A%2F%2Fgithub.com%2FTech4File%2Fcloudsync-cli)
 
 </div>
