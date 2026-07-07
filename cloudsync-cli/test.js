@@ -15,6 +15,9 @@ const __dirname = dirname(__filename);
 const CLI_PATH = join(__dirname, 'bin', 'cloudsync.js');
 const TEST_DIR = join(__dirname, 'test-workspace');
 
+const pkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
+const EXPECTED_VERSION = pkg.version;
+
 // Ensure test-workspace directory exists
 if (!existsSync(TEST_DIR)) {
   mkdirSync(TEST_DIR, { recursive: true });
@@ -51,7 +54,7 @@ function test(name, condition, details = '') {
 
 // Test 1: Version
 const version = run('--version');
-test('Version Check', version.includes('1.0.0'));
+test('Version Check', version.includes(EXPECTED_VERSION));
 
 // Test 2: Help
 const help = run('--help');
