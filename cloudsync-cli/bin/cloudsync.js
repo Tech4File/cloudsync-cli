@@ -2,46 +2,47 @@
 
 /**
  * CloudSync-CLI Entry Point
- * An open-source CLI for secure cloud-to-local synchronization
+ *
+ * Dynamically loads the CLI module using a resolved absolute file path
+ * from import.meta.url so that pkg can locate the bundled files at build time
+ * (pkg traces static imports; dynamic paths are resolved via import.meta.url).
  */
 
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const projectRoot = join(__dirname, '..');
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Ensure directories exist
-const cloudsyncDir = join(process.cwd(), '.cloudsync');
-const stagingDir = join(cloudsyncDir, 'staging');
-const historyDir = join(cloudsyncDir, 'history');
-const cacheDir = join(cloudsyncDir, 'cache');
-const logsDir = join(cloudsyncDir, 'logs');
-
-[cloudsyncDir, stagingDir, historyDir, cacheDir, logsDir].forEach(dir => {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
+// ── Ensure .cloudsync directories exist ──────────────────
+const csyncDir = join(process.cwd(), '.cloudsync');
+[
+  csyncDir,
+  join(csyncDir, 'staging'),
+  join(csyncDir, 'history', 'commits'),
+  join(csyncDir, 'history', 'diffs'),
+  join(csyncDir, 'cache'),
+  join(csyncDir, 'logs'),
+].forEach((dir) => {
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 });
 
-// Set up global error handlers
-process.on('uncaughtException', (error) => {
-  console.error('\n❌ Uncaught Exception:', error.message);
-  if (process.argv.includes('--verbose') || process.argv.includes('-V')) {
-    console.error(error.stack);
-  }
+// ── Global error handlers ────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('\n❌', err.message);
+  if (process.argv.includes('--verbose')) console.error(err.stack);
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('\n❌ Unhandled Rejection at:', promise, 'reason:', reason);
+process.on('unhandledRejection', (reason) => {
+  console.error('\n❌ Unhandled rejection:', reason);
   process.exit(1);
 });
 
-// Import and run CLI
-import('../src/cli/index.js').catch((error) => {
-  console.error('Failed to load CLI:', error.message);
+// ── Resolve CLI entry via import.meta.url (works with pkg) ──
+const cliUrl = new URL('../src/cli/index.js', import.meta.url).href;
+
+import(cliUrl).catch((err) => {
+  console.error('Failed to load CLI:', err.message);
   process.exit(1);
 });

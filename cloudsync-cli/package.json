@@ -16,9 +16,9 @@
     "format": "prettier --write \"**/*.js\" || true",
     "format:check": "prettier --check \"**/*.js\" || true",
     "build": "echo 'Build complete - CLI is ready to use'",
-    "pkg:linux": "pkg bin/cloudsync.js -t node18-linux-x64 -o dist/cloudsync-linux",
-    "pkg:macos": "pkg bin/cloudsync.js -t node18-macos-x64 -o dist/cloudsync-macos",
-    "pkg:win": "pkg bin/cloudsync.js -t node18-win-x64 -o dist/cloudsync-win.exe",
+    "pkg:linux": "pkg bin/cloudsync.js -t node20-linux-x64 -o dist/cloudsync-linux",
+    "pkg:macos": "pkg bin/cloudsync.js -t node20-macos-x64 -o dist/cloudsync-macos",
+    "pkg:win": "pkg bin/cloudsync.js -t node20-win-x64 -o dist/cloudsync-win.exe",
     "pkg:all": "npm run pkg:linux && npm run pkg:macos && npm run pkg:win",
     "postinstall": "echo 'CloudSync-CLI installed successfully!'"
   },
@@ -91,5 +91,12 @@
     "x64",
     "x86",
     "arm64"
-  ]
+  ],
+  "pkg": {
+    "assets": [
+      "src/**/*.js",
+      "package.json"
+    ],
+    "outputPath": "dist"
+  }
 }
