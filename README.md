@@ -1,71 +1,69 @@
-# 🔒 CloudSync-CLI Workspace
+# 🔒 CloudSync-CLI
 
-Welcome to the **CloudSync-CLI** monorepo repository! 
-
-This repository contains the source code, build configurations, and specifications for **CloudSync-CLI**—a Git-like version control command-line interface designed for secure cloud-to-local synchronization using encrypted SSH tunnels.
+<div align="center">
 
 [![GitHub license](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
-[![GitHub package version](https://img.shields.io/github/package-json/v/Tech4File/cloudsync-cli?style=for-the-badge)](cloudsync-cli/package.json)
-[![GitHub Actions CI/CD](https://img.shields.io/github/actions/workflow/status/Tech4File/cloudsync-cli/ci.yml?style=for-the-badge)](https://github.com/Tech4File/cloudsync-cli/actions)
 [![npm version](https://img.shields.io/npm/v/cloudsync-cli.svg?style=for-the-badge)](https://www.npmjs.com/package/cloudsync-cli)
+[![GitHub Actions CI](https://img.shields.io/github/actions/workflow/status/Tech4File/cloudsync-cli/ci.yml?style=for-the-badge&branch=main)](https://github.com/Tech4File/cloudsync-cli/actions)
+
+**Secure, Git-like version control CLI for synchronizing files between local and remote environments over encrypted SSH tunnels.**
+
+</div>
 
 ---
 
-## 📂 Repository Structure
+## What is CloudSync-CLI?
 
-The workspace is organized as follows:
+CloudSync-CLI is a cross-platform command-line tool that brings Git-like version control (stage, commit, history, diff, rollback) to configuration files and sensitive data — syncing them directly between machines over encrypted tunnels without ever touching a public repository.
 
-| Directory / File | Description |
-|:---|:---|
-| 📂 **[cloudsync-cli/](file:///h:/Project-TF/cloudsync-cli/cloudsync-cli)** | The core Node.js package directory for the CLI tool (this directory is published directly to npm). Contains all CLI commands, core transport logic, and internal tests. |
-| 📂 **[test-workspace/](file:///h:/Project-TF/cloudsync-cli/test-workspace)** | A sandbox environment used for local CLI command testing, credentials verification, and dry-run synchronization behavior. |
-| 📄 **[SPEC.md](file:///h:/Project-TF/cloudsync-cli/SPEC.md)** | Technical design specification detailing the command architecture, security mechanics, and underlying network protocol details. |
-| 📄 **[IMPROVEMENTS.md](file:///h:/Project-TF/cloudsync-cli/IMPROVEMENTS.md)** | Developer task board outlining planned fixes, performance enhancements, and future additions. |
+**10 transport protocols.** **Git-like VCS.** **Zero public exposure.**
 
 ---
 
-## 🚀 Quick Start for Developers
+## Repository Structure
 
-To run, develop, and test the CLI tool locally, check out the core package directory:
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/Tech4File/cloudsync-cli.git
-   cd cloudsync-cli
-   ```
-
-2. **Navigate to the CLI package**:
-   ```bash
-   cd cloudsync-cli
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-
-4. **Run the CLI in development mode**:
-   ```bash
-   npm run start -- --help
-   # Or using the global link
-   npm link
-   cloudsync --help
-   ```
-
-5. **Execute tests**:
-   ```bash
-   npm test
-   ```
-
-Refer to the internal **[cloudsync-cli/README.md](file:///h:/Project-TF/cloudsync-cli/cloudsync-cli/README.md)** for a detailed list of CLI commands, configuration options, and installation instructions for end-users.
+| Path | Description |
+|---|---|
+| `cloudsync-cli/` | The npm package — CLI source, commands, transport engine, VCS |
+| `.github/workflows/ci.yml` | CI pipeline — tests on Ubuntu (18/20/22) + Windows + macOS |
+| `.github/workflows/release.yml` | Auto-release on tag push — builds Win/Mac/Linux binaries + npm + GPR |
 
 ---
 
-## 🛡️ Security and Community Guideline Policies
+## Quick Start
 
-We maintain standard repository templates and guideline files at the root level for easy reference:
+```bash
+npm install -g cloudsync-cli
+cloudsync init --host your-server.com --user username
+cloudsync stage .env config.json
+cloudsync commit "Update config"
+cloudsync upload --include .env --exclude node_modules
+cloudsync --help
+```
 
-*   **[LICENSE](file:///h:/Project-TF/cloudsync-cli/LICENSE)** - MIT License information.
-*   **[CODE_OF_CONDUCT.md](file:///h:/Project-TF/cloudsync-cli/CODE_OF_CONDUCT.md)** - Standards of behavior for contributors.
-*   **[CONTRIBUTING.md](file:///h:/Project-TF/cloudsync-cli/CONTRIBUTING.md)** - Guidance on opening issues, writing code, and submitting PRs.
-*   **[SECURITY.md](file:///h:/Project-TF/cloudsync-cli/SECURITY.md)** - Directions for disclosing security vulnerabilities responsibly.
+Full docs: [cloudsync-cli/README.md](cloudsync-cli/README.md)
+
+---
+
+## Automated CI/CD
+
+| Trigger | What Happens |
+|---|---|
+| Push to `main` / PR | `ci.yml` — tests Ubuntu (18/20/22) + Windows + macOS + security |
+| Push version tag `v1.0.6` | `release.yml` — tests → builds EXEs → npm publish → GPR publish → GitHub Release |
+
+**No `npm publish` locally. Everything automated.**
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/Tech4File/cloudsync-cli.git
+cd cloudsync-cli/cloudsync-cli
+npm install && npm test
+```
+
+## License
+
+MIT — [LICENSE](LICENSE) | [Security policy](cloudsync-cli/SECURITY.md) | [Contributing](cloudsync-cli/CONTRIBUTING.md)

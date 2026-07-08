@@ -4,6 +4,7 @@
 
 # Build artifacts
 *.tgz
+*.exe
 dist/
 build/
 
@@ -11,7 +12,7 @@ build/
 .vscode/
 .idea/
 
-# Environment files
+# Environment files (sensitive)
 .env
 .env.local
 .env.*.local
@@ -19,3 +20,9 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Test artifacts
+test-workspace/
+test.env
+clone-test/
+playground/

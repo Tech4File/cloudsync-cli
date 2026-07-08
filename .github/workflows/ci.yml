@@ -1,18 +1,15 @@
 name: CI
 
-# Runs on every push to main/develop and every pull request.
-# Tests across Node 18/20/22 + Windows + macOS.
-# No publishing — that happens automatically when you push a tag like v1.0.6.
+# PR check — fast feedback before merging to main.
+# The full release pipeline (tests + build + publish) runs on push to main via release.yml.
 
 on:
-  push:
-    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  test-ubuntu:
+  test:
     name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: ./cloudsync-cli } }
@@ -31,63 +28,3 @@ jobs:
           for f in $(find src -name '*.js'); do node --check "$f" || exit 1; done
           node --check bin/cloudsync.js || exit 1
       - run: npm test
-      - run: |
-          node bin/cloudsync.js --version
-          node bin/cloudsync.js --help
-          node bin/cloudsync.js doctor
-          node bin/cloudsync.js init --host test.example.com --user ci --port 22 --force
-          node bin/cloudsync.js status
-
-  test-windows:
-    name: Test (Windows)
-    runs-on: windows-latest
-    defaults: { run: { working-directory: ./cloudsync-cli } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: cloudsync-cli/package-lock.json
-      - run: npm ci
-      - run: |
-          Get-ChildItem -Path src -Recurse -Filter *.js | ForEach-Object { node --check $_.FullName }
-          node --check bin/cloudsync.js
-      - run: npm test
-      - run: |
-          node bin/cloudsync.js --version
-          node bin/cloudsync.js --help
-          node bin/cloudsync.js init --host test.example.com --user ci --port 22 --force
-          node bin/cloudsync.js status
-
-  test-macos:
-    name: Test (macOS)
-    runs-on: macos-latest
-    defaults: { run: { working-directory: ./cloudsync-cli } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: cloudsync-cli/package-lock.json
-      - run: npm ci
-      - run: |
-          find src -name '*.js' -exec node --check {} \;
-          node --check bin/cloudsync.js
-      - run: npm test
-      - run: |
-          node bin/cloudsync.js --version
-          node bin/cloudsync.js --help
-          node bin/cloudsync.js doctor
-
-  security:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: ./cloudsync-cli } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - run: npm ci
-      - run: npm audit --audit-level=high --omit=dev

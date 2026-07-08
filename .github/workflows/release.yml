@@ -1,23 +1,60 @@
 name: Release
 
-# Fires ONLY when you push a version tag like v1.0.6.
-# Runs tests → builds Win/Mac/Linux binaries → publishes to npm + GPR →
-# creates a GitHub Release with all assets + checksums.
-# You NEVER need to run `npm publish` locally.
+# FULLY AUTOMATED — every push to main triggers the complete pipeline.
+# No manual tags. No `npm publish`. Nothing local.
+#
+# Push to main → CalVer auto-version → Tests → Builds → Publish + Release
+# Version: YYYY.M.BUILD (e.g. 2026.7.1, 2026.7.2, 2026.8.1)
 
 on:
   push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+    branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
-  # ──────────────────────────────────────────────
-  # 1. GATE: tests must pass before anything else
-  # ──────────────────────────────────────────────
-  test:
-    name: Test gate
+  # ═══════════════════════════════════════════════════════════
+  # 1. AUTO-VERSION — CalVer: YYYY.M.BUILD, auto-increments
+  # ═══════════════════════════════════════════════════════════
+  version:
+    name: Calculate Version
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.calver.outputs.version }}
+      tag: ${{ steps.calver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Generate CalVer
+        id: calver
+        run: |
+          YEAR=$(date +%Y)
+          MONTH=$(date +%-m)
+          git fetch --tags 2>/dev/null || true
+          HIGHEST=0
+          for tag in $(git tag -l "v${YEAR}.${MONTH}.*"); do
+            B=$(echo "$tag" | sed "s/v${YEAR}.${MONTH}.//")
+            if [ "$B" -gt "$HIGHEST" ] 2>/dev/null; then HIGHEST=$B; fi
+          done
+          NEXT=$((HIGHEST + 1))
+          V="${YEAR}.${MONTH}.${NEXT}"
+          echo "version=${V}" >> $GITHUB_OUTPUT
+          echo "tag=v${V}" >> $GITHUB_OUTPUT
+          echo "CalVer: ${V} (tag: v${V})"
+
+  # ═══════════════════════════════════════════════════════════
+  # 2. TEST — must pass on all Node versions
+  # ═══════════════════════════════════════════════════════════
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    needs: [ version ]
     defaults: { run: { working-directory: ./cloudsync-cli } }
     strategy:
       matrix:
@@ -32,9 +69,9 @@ jobs:
       - run: npm ci
       - run: npm test
 
-  # ──────────────────────────────────────────────
-  # 2. BUILD platform binaries (parallel)
-  # ──────────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════
+  # 3. BUILD — platform binaries (parallel)
+  # ═══════════════════════════════════════════════════════════
   build-windows:
     name: Windows EXE
     runs-on: windows-latest
@@ -70,7 +107,7 @@ jobs:
           retention-days: 7
 
   build-linux:
-    name: Linux binary
+    name: Linux Binary
     runs-on: ubuntu-latest
     needs: [ test ]
     defaults: { run: { working-directory: ./cloudsync-cli } }
@@ -92,7 +129,7 @@ jobs:
           retention-days: 7
 
   build-macos:
-    name: macOS binary
+    name: macOS Binary
     runs-on: macos-latest
     needs: [ test ]
     defaults: { run: { working-directory: ./cloudsync-cli } }
@@ -113,23 +150,54 @@ jobs:
           path: cloudsync-cli/cloudsync
           retention-days: 7
 
-  # ──────────────────────────────────────────────
-  # 3. CREATE GITHUB RELEASE with all binaries
-  # ──────────────────────────────────────────────
-  github-release:
-    name: GitHub Release
+  # ═══════════════════════════════════════════════════════════
+  # 4. PUBLISH EVERYTHING (npm + GPR + Git tag + GitHub Release)
+  # ═══════════════════════════════════════════════════════════
+  publish:
+    name: Publish & Release
     runs-on: ubuntu-latest
-    needs: [ build-windows, build-linux, build-macos ]
-    permissions:
-      contents: write
+    needs: [ version, build-windows, build-linux, build-macos ]
+    defaults: { run: { working-directory: ./cloudsync-cli } }
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
       - uses: actions/download-artifact@v4
         with: { name: windows-build, path: assets/windows }
       - uses: actions/download-artifact@v4
         with: { name: linux-build,   path: assets/linux }
       - uses: actions/download-artifact@v4
         with: { name: macos-build,   path: assets/macos }
+
+      - name: Set version in package.json
+        run: npm pkg set version=${{ needs.version.outputs.version }}
+
+      - name: Create and push git tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git tag ${{ needs.version.outputs.tag }}
+          git push origin ${{ needs.version.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+          cache-dependency-path: cloudsync-cli/package-lock.json
+      - run: npm ci
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to GitHub Packages
+        run: |
+          npm pkg set name="@tech4file/cloudsync-cli"
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate checksums
         run: |
@@ -138,10 +206,11 @@ jobs:
             -exec sha256sum {} \; > checksums.txt
           cat checksums.txt
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          name: CloudSync-CLI ${{ github.ref_name }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.version }}
           generate_release_notes: true
           files: |
             assets/windows/cloudsync.exe
@@ -153,55 +222,3 @@ jobs:
             assets/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ──────────────────────────────────────────────
-  # 4. PUBLISH TO NPM
-  # ──────────────────────────────────────────────
-  publish-npm:
-    name: npm publish
-    runs-on: ubuntu-latest
-    needs: [ test ]
-    defaults: { run: { working-directory: ./cloudsync-cli } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-          cache: npm
-          cache-dependency-path: cloudsync-cli/package-lock.json
-      - name: Set version from tag
-        run: npm pkg set version=${GITHUB_REF_NAME#v}
-      - run: npm ci
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  # ──────────────────────────────────────────────
-  # 5. PUBLISH TO GITHUB PACKAGES
-  # ──────────────────────────────────────────────
-  publish-gpr:
-    name: GitHub Packages publish
-    runs-on: ubuntu-latest
-    needs: [ test ]
-    defaults: { run: { working-directory: ./cloudsync-cli } }
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@tech4file'
-          cache: npm
-          cache-dependency-path: cloudsync-cli/package-lock.json
-      - name: Set version and scope
-        run: |
-          npm pkg set version=${GITHUB_REF_NAME#v}
-          npm pkg set name="@tech4file/cloudsync-cli"
-      - run: npm ci
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
