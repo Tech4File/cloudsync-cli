@@ -1,6 +1,6 @@
 {
   "name": "cloudsync-cli",
-  "version": "1.0.5",
+  "version": "2026.7.1",
   "description": "An open-source, Git-like version control CLI for secure cloud-to-local synchronization via encrypted SSH tunnels",
   "type": "module",
   "main": "./bin/cloudsync.js",
