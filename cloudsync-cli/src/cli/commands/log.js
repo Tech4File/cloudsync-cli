@@ -8,8 +8,6 @@ import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const logCommand = new Command('log')
   .description('📜 Show detailed operation logs')

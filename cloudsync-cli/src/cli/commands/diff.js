@@ -9,8 +9,6 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import DiffMatchPatch from 'diff-match-patch';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const diffCommand = new Command('diff')
   .description('📊 Compare file versions')

@@ -15,12 +15,13 @@
     "lint:fix": "eslint src/ --fix || true",
     "format": "prettier --write \"**/*.js\" || true",
     "format:check": "prettier --check \"**/*.js\" || true",
-    "build": "echo 'Build complete - CLI is ready to use'",
+    "build": "node scripts/build.mjs",
     "pkg:linux": "pkg bin/cloudsync.js -t node20-linux-x64 -o dist/cloudsync-linux",
     "pkg:macos": "pkg bin/cloudsync.js -t node20-macos-x64 -o dist/cloudsync-macos",
     "pkg:win": "pkg bin/cloudsync.js -t node20-win-x64 -o dist/cloudsync-win.exe",
     "pkg:all": "npm run pkg:linux && npm run pkg:macos && npm run pkg:win",
-    "postinstall": "echo 'CloudSync-CLI installed successfully!'"
+    "postinstall": "echo 'CloudSync-CLI installed successfully!'",
+    "build:binary": "node scripts/build.mjs && pkg dist/bundle.cjs -t node22-linux-x64 -o dist/cloudsync"
   },
   "keywords": [
     "cli",
@@ -68,7 +69,7 @@
   },
   "dependencies": {
     "archiver": "^7.0.1",
-    "chalk": "^5.3.0",
+    "chalk": "^4.1.2",
     "commander": "^12.1.0",
     "diff-match-patch": "^1.0.5",
     "figlet": "^1.11.0",
@@ -76,6 +77,7 @@
     "uuid": "^14.0.1"
   },
   "devDependencies": {
+    "esbuild": "^0.28.1",
     "eslint": "^8.54.0",
     "pkg": "^5.8.1"
   },

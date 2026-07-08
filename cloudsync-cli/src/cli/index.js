@@ -6,16 +6,12 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import figlet from 'figlet';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
-import { fileURLToPath } from 'url';
+import { VERSION } from '../version.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
-
-// Version from package.json
-const packageJson = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8'));
+const packageJson = { version: VERSION };
 
 // Initialize command
 const program = new Command();

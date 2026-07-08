@@ -9,8 +9,6 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { logOperation } from '../../utils/logger.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const downloadCommand = new Command('download')
   .description('📥 Download files from remote with version history')

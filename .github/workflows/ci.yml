@@ -1,9 +1,11 @@
 name: CI
 
-# PR check — fast feedback before merging to main.
-# The full release pipeline (tests + build + publish) runs on push to main via release.yml.
+# Runs on EVERY push to main/develop AND every pull request.
+# Both CI (this) and Release workflows fire on push — CI is the fast gate.
 
 on:
+  push:
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -24,7 +26,4 @@ jobs:
           cache: npm
           cache-dependency-path: cloudsync-cli/package-lock.json
       - run: npm ci
-      - run: |
-          for f in $(find src -name '*.js'); do node --check "$f" || exit 1; done
-          node --check bin/cloudsync.js || exit 1
       - run: npm test

@@ -8,8 +8,6 @@ import { existsSync, readdirSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const unstageCommand = new Command('unstage')
   .description('📤 Remove files from staging area')

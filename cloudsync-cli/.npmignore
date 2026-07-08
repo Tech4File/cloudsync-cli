@@ -22,3 +22,7 @@ clone-test/
 npm-debug.log*
 tmp/
 temp/
+bin/pkg-launcher.cjs
+bin/pkg-entry.mjs
+scripts/
+dist/

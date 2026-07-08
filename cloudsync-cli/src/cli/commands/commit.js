@@ -11,8 +11,6 @@ import archiver from 'archiver';
 import { logOperation } from '../../utils/logger.js';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const commitCommand = new Command('commit')
   .description('💾 Commit staged changes with version tracking')

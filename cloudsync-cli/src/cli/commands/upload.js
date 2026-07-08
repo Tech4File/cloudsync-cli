@@ -12,8 +12,6 @@ import { Client as SSHClient } from 'ssh2';
 import crypto from 'crypto';
 import { logOperation } from '../../utils/logger.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const uploadCommand = new Command('upload')
   .description('📤 Upload files to remote with version tracking')

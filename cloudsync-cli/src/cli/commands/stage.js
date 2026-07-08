@@ -8,8 +8,6 @@ import { readFileSync, existsSync, writeFileSync, copyFileSync, mkdirSync, readd
 import { join, relative, basename } from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const stageCommand = new Command('stage')
   .description('📦 Stage files for commit (Git-like staging area)')

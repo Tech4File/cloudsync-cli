@@ -9,8 +9,6 @@ import { join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { logOperation } from '../../utils/logger.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const syncCommand = new Command('sync')
   .description('🔄 Bidirectional sync with conflict resolution')

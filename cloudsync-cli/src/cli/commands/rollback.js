@@ -8,8 +8,6 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync, unlinkSync } from '
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const rollbackCommand = new Command('rollback')
   .description('⏪ Revert to a previous version')
