@@ -7,6 +7,7 @@ import chalk from 'chalk';
 import { readFileSync, existsSync, writeFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { fileURLToPath } from 'url';
+import { logOperation } from '../../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -15,7 +16,7 @@ const syncCommand = new Command('sync')
   .description('🔄 Bidirectional sync with conflict resolution')
   .option('--strategy <type>', 'Conflict resolution: local|remote|manual', /^(local|remote|manual)$/i, 'manual')
   .option('--watch', 'Continuous file watching mode', false)
-  .option('--interval <seconds>', 'Sync interval in seconds', parseInt, 30)
+  .option('--interval <seconds>', 'Sync interval in seconds', (v) => parseInt(v, 10), 30)
   .option('--verbose', 'Show detailed sync logs', false)
   .option('--dry-run', 'Preview sync without executing', false)
   .option('--profile <name>', 'Config profile to use', 'default')
@@ -90,6 +91,7 @@ const syncCommand = new Command('sync')
       await resolveConflicts(changes.conflicts, options.strategy, verbose);
     }
 
+    logOperation('sync', `Synced ${changes.upload.length} up / ${changes.download.length} down`);
     console.log(chalk.green('\n✅ Sync complete!'));
     
     // Update sync status
@@ -119,7 +121,7 @@ function analyzeChanges(options, verbose) {
         const relPath = relative(baseDir, fullPath);
         
         // Skip hidden directories except .cloudsync
-        if (entry.name.startsWith('.') && entry.name !== '.cloudsync') {
+        if (entry.name === '.cloudsync' || entry.name === '.git') {
           continue;
         }
 

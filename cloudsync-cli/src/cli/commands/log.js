@@ -13,7 +13,7 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const logCommand = new Command('log')
   .description('📜 Show detailed operation logs')
-  .option('--limit <n>', 'Number of entries', parseInt, 20)
+  .option('--limit <n>', 'Number of entries', (v) => parseInt(v, 10), 20)
   .option('--type <type>', 'Filter by type: upload|download|sync|all', /^(upload|download|sync|all)$/i, 'all')
   .option('--format <type>', 'Output format: detailed|short|json', /^(detailed|short|json)$/i, 'detailed')
   .option('--verbose', 'Show full log data', false)

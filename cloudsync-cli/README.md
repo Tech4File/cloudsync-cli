@@ -28,10 +28,11 @@
 | **Large Binaries** | Poor handling, bloats repos | Optimized chunking & delta compression |
 | **Binary Diffs** | Not supported | Full delta compression with zstd/lz4 |
 | **Transfer Protocols** | HTTPS only | SSH, SFTP, RSYNC, WebSocket, Direct Pipe |
+
 | **Real-time Sync** | Manual push/pull cycles | Optional watch mode with instant sync |
 | **P2P Sharing** | Requires fork/clone | Session links with optional password protection |
 | **Conflict Resolution** | Manual 3-way merge | Visual diff + automated strategies |
-| **Cloud-Native** | Indirect integration | Direct Replit, SSH servers, custom clouds |
+| **Cloud-Native** | Indirect integration | Direct SSH, any cloud platform |
 | **Memory Safety** | Disk-based temp files | Memory-only streams for sensitive data |
 | **Speed** | Compressed HTTPS | Raw SSH piping for maximum throughput |
 
@@ -112,7 +113,7 @@ cloudsync init
 
 # Or with all options
 cloudsync init \
-  --host replit.com \
+  --host your-server.com \
   --user myusername \
   --port 22 \
   --protocol ssh \
@@ -123,7 +124,7 @@ cloudsync init \
 
 ```bash
 # Stage specific files
-cloudsync stage .env .replit replit.nix
+cloudsync stage .env config.json
 
 # Stage all files
 cloudsync stage --all
@@ -305,7 +306,7 @@ cloudsync port <local:remote>
 {
   "profiles": {
     "default": {
-      "host": "replit.com",
+      "host": "your-server.com",
       "user": "myusername",
       "port": 22,
       "key": "~/.ssh/id_rsa",
@@ -367,7 +368,7 @@ cloudsync config --unset profiles.production
 │  Memory-Only Streams ◄──────────────┤                     │
 │  (no disk writes)                   │                     │
 │                                     ▼                     │
-│  Remote Server (Replit/SSH)         │                     │
+│  Remote Server (SSH or cloud)         │                     │
 │  ┌─────────────────┐       Authenticated & Encrypted    │
 │  │  Public Key 🔓  │◄──────────────────────────         │
 │  └─────────────────┘                                    │
@@ -443,8 +444,8 @@ git remote add prod git@github.com:myorg/prod-configs.git
 
 ```bash
 # Simple and secure
-cloudsync init --host replit.com --user myuser
-cloudsync stage .env .replit replit.nix
+cloudsync init --host your-server.com --user myuser
+cloudsync stage .env config.json
 cloudsync commit "Update environment config"
 cloudsync upload                # Encrypted, versioned, done
 
@@ -455,13 +456,13 @@ cloudsync upload                # Encrypted, versioned, done
 
 ## 🌐 Use Cases
 
-### 1. Replit Cloud Development
+### 1. Cloud Environment Sync
 
 ```bash
-# Sync local .env to Replit
-cloudsync upload --include .env,.replit --exclude node_modules
+# Sync local .env to your cloud server
+cloudsync upload --include .env,config.json --exclude node_modules
 
-# Pull latest from Replit
+# Pull latest from your cloud server
 cloudsync download --latest
 
 # Create persistent tunnel for local dev

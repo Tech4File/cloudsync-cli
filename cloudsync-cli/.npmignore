@@ -1,41 +1,24 @@
-
-# Git files
 .git/
 .gitignore
 .gitattributes
-
-# CI/CD
 .github/
-
-# Documentation source
-*.md
-
-# Tests
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+installer/
 test.js
 __tests__/
-
-# Development tools
+test-workspace/
+clone-test/
 .eslintrc*
 .jshintrc*
 .prettierrc*
 .editorconfig
-
-# IDE
 .vscode/
 .idea/
-
-# OS files
 .DS_Store
-
-# Local config
 .cloudsync/
-
-# Logs
 *.log
 npm-debug.log*
-
-# Temporary
 tmp/
 temp/
-test-workspace/
-clone-test/

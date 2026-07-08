@@ -13,7 +13,7 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const historyCommand = new Command('history')
   .description('📜 View version control history')
-  .option('--limit <n>', 'Number of entries to show', parseInt, 10)
+  .option('--limit <n>', 'Number of entries to show', (v) => parseInt(v, 10), 10)
   .option('--file <path>', 'Show history for specific file')
   .option('--format <type>', 'Output format: table|json|short', /^(table|json|short)$/i, 'table')
   .option('--verbose', 'Show detailed history', false)

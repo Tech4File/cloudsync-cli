@@ -8,6 +8,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, unlink
 import { join, basename } from 'path';
 import { createHash, randomBytes } from 'crypto';
 import archiver from 'archiver';
+import { logOperation } from '../../utils/logger.js';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -117,6 +118,7 @@ const commitCommand = new Command('commit')
     }
 
     // Display commit info
+    logOperation('commit', `Committed: ${commitMessage}`, { files: stagedFiles, commitId });
     console.log(chalk.green('\n✅ Committed successfully!'));
     console.log(chalk.gray('━'.repeat(60)));
     console.log(chalk.cyan(`   Commit ID: ${commitId}`));

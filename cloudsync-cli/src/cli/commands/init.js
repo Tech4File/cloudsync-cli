@@ -7,12 +7,13 @@ import chalk from 'chalk';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { logOperation } from '../../utils/logger.js';
 
 const initCommand = new Command('init')
   .description('Initialize CloudSync configuration profile')
-  .option('--host <hostname>', 'Remote host address (e.g., replit.com)')
+  .option('--host <hostname>', 'Remote host address (e.g., your-server.com)')
   .option('--user <username>', 'SSH username')
-  .option('--port <number>', 'SSH port', parseInt, 22)
+  .option('--port <number>', 'SSH port', (v) => parseInt(v, 10), 22)
   .option('--key <path>', 'Path to SSH private key')
   .option('--protocol <protocol>', 'Default transport protocol', /^(ssh|rsync|sftp|websocket|pipe)$/i, 'ssh')
   .option('--workspace <path>', 'Local workspace path', process.cwd())
@@ -52,7 +53,7 @@ const initCommand = new Command('init')
     }
 
     // Use options or defaults
-    const host = options.host || 'replit.com';
+    const host = options.host || 'your-server.com';
     const user = options.user || process.env.USER || 'user';
     const port = options.port || 22;
     const keyPath = options.key || join(homedir(), '.ssh', 'id_rsa');
@@ -64,7 +65,7 @@ const initCommand = new Command('init')
     config.profiles[profileName] = {
       host,
       user,
-      port: parseInt(port),
+      port: parseInt(port, 10),
       key: keyPath,
       protocol: protocol.toLowerCase(),
       workspace,
@@ -82,6 +83,8 @@ const initCommand = new Command('init')
 
     // Save config
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    logOperation('init', `Initialized profile '${profileName}' -> ${host}:${port}`);
 
     console.log(chalk.green('\n✅ CloudSync initialized successfully!'));
     console.log(chalk.gray('━'.repeat(50)));
