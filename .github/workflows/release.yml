@@ -69,8 +69,7 @@ jobs:
           cache-dependency-path: cloudsync-cli/package-lock.json
       - run: npm ci
       - run: npm run build
-      - run: npm install -g @yao-pkg/pkg
-      - run: pkg dist/bundle.cjs -t node22-win-x64 -o cloudsync.exe
+      - run: npx @yao-pkg/pkg dist/bundle.cjs -t node22-win-x64 -o cloudsync.exe
       - run: .\cloudsync.exe --version
       - run: |
           mkdir release-assets
@@ -104,8 +103,7 @@ jobs:
           cache-dependency-path: cloudsync-cli/package-lock.json
       - run: npm ci
       - run: npm run build
-      - run: npm install -g @yao-pkg/pkg
-      - run: pkg dist/bundle.cjs -t node22-linux-x64 -o cloudsync
+      - run: npx @yao-pkg/pkg dist/bundle.cjs -t node22-linux-x64 -o cloudsync
       - run: chmod +x cloudsync && ./cloudsync --version
       - uses: actions/upload-artifact@v4
         with:
@@ -127,8 +125,7 @@ jobs:
           cache-dependency-path: cloudsync-cli/package-lock.json
       - run: npm ci
       - run: npm run build
-      - run: npm install -g @yao-pkg/pkg
-      - run: pkg dist/bundle.cjs -t node22-macos-x64 -o cloudsync
+      - run: npx @yao-pkg/pkg dist/bundle.cjs -t node22-macos-x64 -o cloudsync
       - run: chmod +x cloudsync && ./cloudsync --version
       - uses: actions/upload-artifact@v4
         with:
@@ -160,10 +157,10 @@ jobs:
 
       - name: Create git tag
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add package.json src/version.mjs
-          git commit -m "release: ${{ needs.version.outputs.version }}" || true
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src/version.mjs
+          git commit -m "release: ${{ needs.version.outputs.version }} [skip ci]" || true
           git tag ${{ needs.version.outputs.tag }}
           git push origin HEAD:main ${{ needs.version.outputs.tag }}
 
