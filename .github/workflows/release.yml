@@ -143,11 +143,11 @@ jobs:
         with: { fetch-depth: 0, fetch-tags: true }
 
       - uses: actions/download-artifact@v4
-        with: { name: windows-build, path: assets/windows }
+        with: { name: windows-build, path: cloudsync-cli/assets/windows }
       - uses: actions/download-artifact@v4
-        with: { name: linux-build,   path: assets/linux }
+        with: { name: linux-build,   path: cloudsync-cli/assets/linux }
       - uses: actions/download-artifact@v4
-        with: { name: macos-build,   path: assets/macos }
+        with: { name: macos-build,   path: cloudsync-cli/assets/macos }
 
       - name: Set version
         run: |
@@ -198,9 +198,10 @@ jobs:
 
       - name: Checksums
         run: |
+          mkdir -p assets
           cd assets
           find . -type f ! -name '*.zip' ! -name '*.bat' ! -name '*.iss' ! -name '*.md' ! -name 'LICENSE' \
-            -exec sha256sum {} \; > checksums.txt
+            -exec sha256sum {} \; > checksums.txt || true
 
       - name: GitHub Release
         uses: softprops/action-gh-release@v2
@@ -209,12 +210,12 @@ jobs:
           name: ${{ needs.version.outputs.version }}
           generate_release_notes: true
           files: |
-            assets/windows/cloudsync.exe
-            assets/windows/cloudsync-windows-x64.zip
-            assets/windows/CloudSync-Setup.bat
-            assets/windows/CloudSync.iss
-            assets/linux/cloudsync
-            assets/macos/cloudsync
-            assets/checksums.txt
+            cloudsync-cli/assets/windows/cloudsync.exe
+            cloudsync-cli/assets/windows/cloudsync-windows-x64.zip
+            cloudsync-cli/assets/windows/CloudSync-Setup.bat
+            cloudsync-cli/assets/windows/CloudSync.iss
+            cloudsync-cli/assets/linux/cloudsync
+            cloudsync-cli/assets/macos/cloudsync
+            cloudsync-cli/assets/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
