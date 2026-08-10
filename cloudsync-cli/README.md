@@ -82,17 +82,21 @@ CloudSync-CLI brings **Git-like version control** to sensitive configuration fil
 
 ---
 
-## 📥 Installation
-
-### Via npm (Global)
+### Via npm (Global - npmjs.org)
 
 ```bash
 npm install -g cloudsync-cli
 ```
 
-### Via Windows Installer
+### Via GitHub Packages (GPR)
 
-Download `CloudSync-Setup.exe` from our [releases page](https://github.com/Tech4File/cloudsync-cli/releases) and run the installer.
+```bash
+npm install -g @tech4file/cloudsync-cli --registry=https://npm.pkg.github.com
+```
+
+### Standalone Executable Binaries (Windows / Linux / macOS)
+
+Download pre-compiled single-executable binaries (`cloudsync.exe`, `cloudsync` Linux/macOS) directly from the [GitHub Releases Page](https://github.com/Tech4File/cloudsync-cli/releases).
 
 ### Verify Installation
 
