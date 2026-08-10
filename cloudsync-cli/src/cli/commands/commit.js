@@ -7,9 +7,9 @@ import chalk from 'chalk';
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, createWriteStream } from 'fs';
 import { join, basename } from 'path';
 import { createHash, randomBytes } from 'crypto';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { logOperation } from '../../utils/logger.js';
-import { fileURLToPath } from 'url';
+import { safeJsonParse } from '../../utils/security.js';
 
 
 const commitCommand = new Command('commit')
@@ -86,7 +86,7 @@ const commitCommand = new Command('commit')
     const indexPath = join(process.cwd(), '.cloudsync', 'history', 'index.json');
     let history = [];
     if (existsSync(indexPath)) {
-      history = JSON.parse(readFileSync(indexPath, 'utf8'));
+      history = safeJsonParse(readFileSync(indexPath, 'utf8'), {});
     }
 
     if (options.amend && history.length > 0) {
@@ -136,14 +136,19 @@ function generateCommitId() {
 async function createStagedArchive(stagingDir, files, outputPath) {
   return new Promise((resolve, reject) => {
     const output = createWriteStream(outputPath);
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = new ZipArchive({ zlib: { level: 9 } });
 
     output.on('close', () => resolve());
     archive.on('error', reject);
     archive.pipe(output);
 
     files.forEach(f => {
-      archive.file(join(stagingDir, f), { name: f });
+      const safeName = f.replace(/[\\/]/g, '__');
+      const stagedFilePath = join(stagingDir, safeName);
+      const actualPath = existsSync(stagedFilePath) ? stagedFilePath : join(stagingDir, f);
+      if (existsSync(actualPath)) {
+        archive.file(actualPath, { name: f });
+      }
     });
 
     archive.finalize();

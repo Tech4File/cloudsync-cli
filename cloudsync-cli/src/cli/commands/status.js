@@ -6,7 +6,8 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
+import { formatBytes } from '../../utils/helpers.js';
+import { safeJsonParse } from '../../utils/security.js';
 
 
 const statusCommand = new Command('status')
@@ -32,7 +33,7 @@ const statusCommand = new Command('status')
       pendingChanges: false
     };
     if (existsSync(statusFile)) {
-      syncStatus = JSON.parse(readFileSync(statusFile, 'utf8'));
+      syncStatus = safeJsonParse(readFileSync(statusFile, 'utf8'), {});
     }
 
     // Get staged files
@@ -44,7 +45,7 @@ const statusCommand = new Command('status')
     // Get history
     let commitCount = 0;
     if (existsSync(indexFile)) {
-      const history = JSON.parse(readFileSync(indexFile, 'utf8'));
+      const history = safeJsonParse(readFileSync(indexFile, 'utf8'), {});
       commitCount = history.length;
     }
 
@@ -182,12 +183,6 @@ function getWorkspaceStats(workspace) {
   };
 }
 
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+
 
 export default statusCommand;

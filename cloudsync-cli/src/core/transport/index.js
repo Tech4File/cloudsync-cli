@@ -11,7 +11,7 @@ import { Client as SSHClient } from 'ssh2';
 import { createReadStream, createWriteStream, statSync, existsSync, readFileSync, mkdirSync } from 'fs';
 import { join, basename } from 'path';
 import os from 'os';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { createHash, randomBytes } from 'crypto';
 
 const PROTOCOLS = {
@@ -89,12 +89,12 @@ class TransportEngine {
   // ===== UPLOAD METHODS =====
 
   async uploadSCP(files, remotePath, profile) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const conn = new SSHClient();
       conn.on('ready', () => {
         this.log('SSH connected, SCP transfer ready');
         conn.sftp((err, sftp) => {
-          if (err) { conn.end(); return resolve({ protocol:'scp', simulated:true, error:err.message }); }
+          if (err) { conn.end(); return reject(new Error(`SFTP channel failed: ${err.message}`)); }
           this.log('SFTP channel established - real transfer would proceed here');
           conn.end();
           resolve({ protocol:'scp', method:'sftp-channel', success:true });
@@ -102,11 +102,10 @@ class TransportEngine {
       });
       conn.on('error', (err) => {
         this.log(`SSH error: ${err.message}`, 'error');
-        resolve({ protocol:'scp', simulated:true, reason:'SSH unavailable in this environment',
-          recommendation:'Use --protocol hybrid for local transfers or --protocol http for cloud APIs' });
+        reject(new Error(`SSH connection failed: ${err.message}. Use --protocol hybrid for local transfers or --protocol http for cloud APIs`));
       });
       try { conn.connect(this.buildSSHConfig(profile)); }
-      catch(e) { resolve({ protocol:'scp', simulated:true, error:e.message }); }
+      catch(e) { reject(new Error(`SSH config error: ${e.message}`)); }
     });
   }
 
@@ -128,10 +127,10 @@ class TransportEngine {
 
   async uploadRSYNC(files, remotePath, profile) {
     this.log('RSYNC delta: block-level diff, only changed data transferred');
-    const savings = Math.floor(Math.random()*40)+40;
-    this.log(`Estimated bandwidth savings: ${savings}%`);
+    const totalSize = files.reduce((s,f)=>{try{return s+statSync(f).size}catch(e){return s}},0);
     return { protocol:'rsync', method:'delta-blocks', compression:'built-in-lz4', resume:true,
-      estimatedSavings:`${savings}%`, algorithm:'rolling-checksum-adler32', recommended:true };
+      totalSize, fileCount: files.length, algorithm:'rolling-checksum-adler32',
+      note:'Actual delta savings depend on remote state comparison' };
   }
 
   async uploadWS(files, remotePath, profile) {
@@ -223,7 +222,7 @@ class TransportEngine {
   createArchive(files, outputPath) {
     return new Promise((resolve, reject) => {
       const output = createWriteStream(outputPath);
-      const archive = archiver('zip', { zlib: { level:9 } });
+      const archive = new ZipArchive({ zlib: { level:9 } });
       output.on('close', ()=>{this.log(`Archive: ${archive.pointer()}B`);resolve();});
       archive.on('error', reject);
       archive.pipe(output);
@@ -233,7 +232,8 @@ class TransportEngine {
   }
 
   calculateDeltaSavings(files) {
-    return Math.min(95, (files.length>10?60:40) + Math.floor(Math.random()*20));
+    // Estimate based on file count heuristic (real savings require remote state comparison)
+    return Math.min(95, files.length > 10 ? 65 : 40);
   }
 
   generateChecksum(filePath) {

@@ -6,7 +6,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
+import { safeJsonParse } from '../../utils/security.js';
 
 
 const portCommand = new Command('port')
@@ -33,7 +33,7 @@ const portCommand = new Command('port')
       return;
     }
 
-    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    const config = safeJsonParse(readFileSync(configPath, 'utf8'), {});
     const profile = config.profiles[options.profile] || config.profiles[config.settings.defaultProfile];
     
     if (!profile) {

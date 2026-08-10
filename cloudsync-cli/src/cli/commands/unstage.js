@@ -6,7 +6,6 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { existsSync, readdirSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
 
 
 const unstageCommand = new Command('unstage')

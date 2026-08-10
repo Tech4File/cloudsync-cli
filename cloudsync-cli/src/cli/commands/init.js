@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { logOperation } from '../../utils/logger.js';
+import { isValidHost, isValidPort, isValidUsername, safeJsonParse, sanitizeInput } from '../../utils/security.js';
 
 const initCommand = new Command('init')
   .description('Initialize CloudSync configuration profile')
@@ -45,20 +46,30 @@ const initCommand = new Command('init')
     let config = { profiles: {}, settings: {} };
     if (existsSync(configPath) && !options.force) {
       try {
-        config = JSON.parse(readFileSync(configPath, 'utf8'));
+        config = safeJsonParse(readFileSync(configPath, 'utf8'), config);
         if (verbose) console.log(chalk.gray('Loaded existing configuration'));
       } catch (e) {
         if (verbose) console.log(chalk.yellow('Existing config corrupted, creating new one'));
       }
     }
 
-    // Use options or defaults
-    const host = options.host || 'your-server.com';
-    const user = options.user || process.env.USER || 'user';
+    const host = sanitizeInput(options.host || 'your-server.com', 253);
+    const user = sanitizeInput(options.user || process.env.USER || 'user', 32);
     const port = options.port || 22;
     const keyPath = options.key || join(homedir(), '.ssh', 'id_rsa');
     const protocol = options.protocol;
     const workspace = options.workspace;
+
+    // Validate inputs
+    if (host !== 'your-server.com' && !isValidHost(host)) {
+      console.log(chalk.red(`\n❌ Invalid hostname: "${host}"`));
+      console.log(chalk.gray('   Use a valid domain (e.g., server.example.com) or IP address'));
+      return;
+    }
+    if (!isValidPort(port)) {
+      console.log(chalk.red(`\n❌ Invalid port: ${port} (must be 1-65535)`));
+      return;
+    }
 
     // Build profile
     const profileName = options.name;

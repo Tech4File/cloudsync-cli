@@ -6,8 +6,8 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
 import DiffMatchPatch from 'diff-match-patch';
+import { safeJsonParse } from '../../utils/security.js';
 
 
 const diffCommand = new Command('diff')
@@ -25,7 +25,7 @@ const diffCommand = new Command('diff')
       return;
     }
 
-    const history = JSON.parse(readFileSync(indexFile, 'utf8'));
+    const history = safeJsonParse(readFileSync(indexFile, 'utf8'), {});
     
     // Default to last 2 versions
     if (versions.length === 0) {
@@ -48,7 +48,7 @@ const diffCommand = new Command('diff')
     const commits = versions.map(v => {
       const file = join(commitsDir, `${v}.json`);
       if (existsSync(file)) {
-        return JSON.parse(readFileSync(file, 'utf8'));
+        return safeJsonParse(readFileSync(file, 'utf8'), {});
       }
       return null;
     }).filter(Boolean);

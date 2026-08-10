@@ -4,9 +4,11 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, unlinkSync, statfsSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { homedir, platform, freemem, totalmem } from 'os';
+import { execSync } from 'child_process';
+import { safeJsonParse } from '../../utils/security.js';
 
 const doctorCommand = new Command('doctor')
   .description('🔍 Run diagnostics and connectivity tests')
@@ -32,6 +34,21 @@ const doctorCommand = new Command('doctor')
     
     // Check SSH key
     results.push(checkSSHKey(verbose));
+
+    // Check write permissions
+    results.push(checkWritePermissions(verbose));
+
+    // Check disk space
+    results.push(checkDiskSpace(verbose));
+
+    // Check system memory
+    results.push(checkMemory(verbose));
+
+    // Check system tools
+    results.push(checkSystemTools(verbose));
+
+    // Check SSH connectivity (if configured)
+    results.push(await checkSSHConnectivity(verbose));
     
     // Display summary
     displaySummary(results);
@@ -60,7 +77,7 @@ function checkCloudSync(verbose) {
     return {
       name: 'CloudSync Installation',
       status: 'pass',
-      message: exists ? 'Installed' : 'CLI available, workspace not initialized'
+      message: exists ? 'Installed and initialized' : 'CLI available, workspace not initialized'
     };
   } catch (e) {
     return {
@@ -74,28 +91,220 @@ function checkCloudSync(verbose) {
 function checkConfiguration(verbose) {
   const configPath = join(process.cwd(), '.cloudsync', 'config.json');
   
-  const exists = existsSync(configPath);
-  
-  return {
-    name: 'Configuration',
-    status: exists ? 'pass' : 'warn',
-    message: exists ? 'Found' : 'Not initialized - Run: cloudsync init',
-    fix: !exists ? 'cloudsync init' : null
-  };
+  if (!existsSync(configPath)) {
+    return {
+      name: 'Configuration',
+      status: 'warn',
+      message: 'Not initialized - Run: cloudsync init',
+      fix: 'cloudsync init'
+    };
+  }
+
+  try {
+    const config = safeJsonParse(readFileSync(configPath, 'utf8'), {});
+    const profileCount = Object.keys(config.profiles || {}).length;
+    return {
+      name: 'Configuration',
+      status: 'pass',
+      message: `Found (${profileCount} profile${profileCount !== 1 ? 's' : ''})`
+    };
+  } catch (e) {
+    return {
+      name: 'Configuration',
+      status: 'fail',
+      message: 'Config file is corrupted',
+      fix: 'cloudsync init --force'
+    };
+  }
 }
 
 function checkSSHKey(verbose) {
   const sshDir = join(homedir(), '.ssh');
-  const commonKeys = ['id_rsa', 'id_ed25519', 'id_ecdsa'];
+  const commonKeys = ['id_ed25519', 'id_rsa', 'id_ecdsa'];
   
   const found = commonKeys.filter(k => existsSync(join(sshDir, k)));
   
   return {
     name: 'SSH Key',
     status: found.length > 0 ? 'pass' : 'warn',
-    message: found.length > 0 ? `Found: ${found[0]}` : 'No SSH key found',
-    fix: found.length === 0 ? 'ssh-keygen -t rsa -b 4096' : null
+    message: found.length > 0 ? `Found: ${found.join(', ')}` : 'No SSH key found',
+    fix: found.length === 0 ? 'ssh-keygen -t ed25519 -C "your@email.com"' : null
   };
+}
+
+function checkWritePermissions(verbose) {
+  const testDir = join(process.cwd(), '.cloudsync');
+  const testFile = join(testDir, '.doctor-test');
+  
+  try {
+    writeFileSync(testFile, 'test');
+    unlinkSync(testFile);
+    return {
+      name: 'Write Permissions',
+      status: 'pass',
+      message: '.cloudsync directory is writable'
+    };
+  } catch (e) {
+    return {
+      name: 'Write Permissions',
+      status: existsSync(testDir) ? 'fail' : 'warn',
+      message: existsSync(testDir) ? 'Cannot write to .cloudsync directory' : 'No .cloudsync directory yet',
+      fix: existsSync(testDir) ? `chmod -R 755 ${testDir}` : 'cloudsync init'
+    };
+  }
+}
+
+function checkDiskSpace(verbose) {
+  try {
+    // Use statfsSync if available (Node 18.15+)
+    if (typeof statfsSync === 'function') {
+      const stats = statfsSync(process.cwd());
+      const freeGB = (stats.bavail * stats.bsize) / (1024 ** 3);
+      const totalGB = (stats.blocks * stats.bsize) / (1024 ** 3);
+      const usedPercent = ((1 - stats.bavail / stats.blocks) * 100).toFixed(1);
+      
+      return {
+        name: 'Disk Space',
+        status: freeGB > 1 ? 'pass' : freeGB > 0.1 ? 'warn' : 'fail',
+        message: `${freeGB.toFixed(1)} GB free of ${totalGB.toFixed(1)} GB (${usedPercent}% used)`,
+        fix: freeGB <= 0.1 ? 'Free up disk space' : null
+      };
+    }
+    return {
+      name: 'Disk Space',
+      status: 'pass',
+      message: 'Check skipped (requires Node 18.15+)'
+    };
+  } catch (e) {
+    return {
+      name: 'Disk Space',
+      status: 'pass',
+      message: 'Unable to check (non-critical)'
+    };
+  }
+}
+
+function checkMemory(verbose) {
+  const freeGB = (freemem() / (1024 ** 3)).toFixed(2);
+  const totalGB = (totalmem() / (1024 ** 3)).toFixed(2);
+  return {
+    name: 'System Memory',
+    status: freemem() > 256 * 1024 * 1024 ? 'pass' : 'warn',
+    message: `${freeGB} GB free of ${totalGB} GB`
+  };
+}
+
+function checkSystemTools(verbose) {
+  const tools = [];
+  const missing = [];
+
+  for (const tool of ['ssh', 'scp', 'rsync']) {
+    try {
+      execSync(`${platform() === 'win32' ? 'where' : 'which'} ${tool}`, { stdio: 'pipe' });
+      tools.push(tool);
+    } catch {
+      missing.push(tool);
+    }
+  }
+
+  if (missing.length === 0) {
+    return {
+      name: 'System Tools',
+      status: 'pass',
+      message: `Found: ${tools.join(', ')}`
+    };
+  }
+
+  return {
+    name: 'System Tools',
+    status: tools.includes('ssh') ? 'warn' : 'warn',
+    message: `Found: ${tools.join(', ') || 'none'}${missing.length > 0 ? ` | Missing: ${missing.join(', ')}` : ''}`,
+    fix: missing.includes('ssh') ? 'Install OpenSSH client' : null
+  };
+}
+
+async function checkSSHConnectivity(verbose) {
+  const configPath = join(process.cwd(), '.cloudsync', 'config.json');
+  if (!existsSync(configPath)) {
+    return {
+      name: 'SSH Connectivity',
+      status: 'warn',
+      message: 'No config - skipping connection test'
+    };
+  }
+
+  try {
+    const config = safeJsonParse(readFileSync(configPath, 'utf8'), {});
+    const defaultProfile = config.settings?.defaultProfile || 'default';
+    const profile = config.profiles?.[defaultProfile];
+
+    if (!profile || !profile.host || profile.host === 'your-server.com') {
+      return {
+        name: 'SSH Connectivity',
+        status: 'warn',
+        message: 'Default host not configured - skipping test'
+      };
+    }
+
+    // Quick DNS/reachability check using SSH timeout
+    try {
+      const { Client: SSHClient } = await import('ssh2');
+      return new Promise((resolve) => {
+        const conn = new SSHClient();
+        const timeout = setTimeout(() => {
+          conn.end();
+          resolve({
+            name: 'SSH Connectivity',
+            status: 'warn',
+            message: `${profile.host} - connection timed out (5s)`
+          });
+        }, 5000);
+
+        conn.on('ready', () => {
+          clearTimeout(timeout);
+          conn.end();
+          resolve({
+            name: 'SSH Connectivity',
+            status: 'pass',
+            message: `${profile.host} - connected successfully`
+          });
+        });
+
+        conn.on('error', (err) => {
+          clearTimeout(timeout);
+          resolve({
+            name: 'SSH Connectivity',
+            status: 'warn',
+            message: `${profile.host} - ${err.message}`
+          });
+        });
+
+        const sshDir = join(homedir(), '.ssh');
+        const keyPath = profile.key || join(sshDir, 'id_ed25519');
+        const privateKey = existsSync(keyPath) ? readFileSync(keyPath) : undefined;
+
+        conn.connect({
+          host: profile.host,
+          port: profile.port || 22,
+          username: profile.user || 'root',
+          privateKey,
+          readyTimeout: 5000
+        });
+      });
+    } catch (e) {
+      return {
+        name: 'SSH Connectivity',
+        status: 'warn',
+        message: `${profile.host} - test failed: ${e.message}`
+      };
+    }
+  } catch (e) {
+    return {
+      name: 'SSH Connectivity',
+      status: 'warn',
+      message: 'Config parse error'
+    };
+  }
 }
 
 function displaySummary(results) {
@@ -140,3 +349,4 @@ function displaySummary(results) {
 }
 
 export default doctorCommand;
+

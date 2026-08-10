@@ -6,7 +6,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
+import { safeJsonParse } from '../../utils/security.js';
 
 
 const historyCommand = new Command('history')
@@ -24,7 +24,7 @@ const historyCommand = new Command('history')
       return;
     }
 
-    const history = JSON.parse(readFileSync(indexFile, 'utf8'));
+    const history = safeJsonParse(readFileSync(indexFile, 'utf8'), {});
     const limitedHistory = history.slice(0, options.limit);
 
     console.log(chalk.cyan('\n📜 CloudSync History'));

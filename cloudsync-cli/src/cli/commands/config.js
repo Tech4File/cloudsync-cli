@@ -7,6 +7,7 @@ import chalk from 'chalk';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { safeJsonParse, sanitizeInput } from '../../utils/security.js';
 
 const configCommand = new Command('config')
   .description('⚙️ Manage CloudSync configuration')
@@ -37,7 +38,7 @@ const configCommand = new Command('config')
     let config = {};
     if (existsSync(configPath)) {
       try {
-        config = JSON.parse(readFileSync(configPath, 'utf8'));
+        config = safeJsonParse(readFileSync(configPath, 'utf8'), {});
       } catch (e) {
         config = {};
       }
@@ -175,12 +176,12 @@ function unsetNestedKey(obj, keys) {
 }
 
 function parseValue(value) {
-  // Try to parse as JSON
+  // Try to parse as JSON safely
   try {
-    const parsed = JSON.parse(value);
-    return parsed;
+    const parsed = safeJsonParse(value, undefined);
+    if (parsed !== undefined) return parsed;
+    return value;
   } catch {
-    // Return as string
     return value;
   }
 }

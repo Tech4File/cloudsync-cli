@@ -6,8 +6,9 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync, writeFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
-import { fileURLToPath } from 'url';
 import { logOperation } from '../../utils/logger.js';
+import { sleep } from '../../utils/helpers.js';
+import { safeJsonParse } from '../../utils/security.js';
 
 
 const syncCommand = new Command('sync')
@@ -29,7 +30,7 @@ const syncCommand = new Command('sync')
       return;
     }
 
-    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    const config = safeJsonParse(readFileSync(configPath, 'utf8'), {});
     const profile = config.profiles[options.profile] || config.profiles[config.settings.defaultProfile];
     
     if (!profile) {
@@ -138,11 +139,12 @@ function analyzeChanges(options, verbose) {
             }
           }
           
+          const fileStat = statSync(fullPath);
           changes.upload.push({
             path: fullPath,
             relative: relPath,
-            size: statSync(fullPath).size,
-            modified: statSync(fullPath).mtime
+            size: fileStat.size,
+            modified: fileStat.mtime
           });
         }
       }
@@ -248,8 +250,6 @@ function updateSyncStatus(changes, verbose) {
   if (verbose) console.log(chalk.gray('Sync status updated'));
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+
 
 export default syncCommand;

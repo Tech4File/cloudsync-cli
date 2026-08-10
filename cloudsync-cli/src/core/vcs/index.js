@@ -2,12 +2,14 @@
  * Version Control System - Git-like operations for CloudSync
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, statSync, cpSync, createWriteStream } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, statSync, cpSync, createWriteStream, createReadStream } from 'fs';
 import { join, relative, basename } from 'path';
 import { createHash, randomBytes } from 'crypto';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import os from 'os';
 import DiffMatchPatch from 'diff-match-patch';
+import { inflateRawSync } from 'zlib';
+import { safeJsonParse } from '../../utils/security.js';
 
 class VersionControl {
   constructor(options = {}) {
@@ -37,7 +39,8 @@ class VersionControl {
     for (const file of files) {
       const fullPath = join(workspace, file);
       if (!existsSync(fullPath)) { errors.push({ file, error: 'File not found' }); continue; }
-      const stagedPath = join(this.stagingDir, basename(file));
+      const safeName = file.replace(/[\\/]/g, '__');
+      const stagedPath = join(this.stagingDir, safeName);
       try { cpSync(fullPath, stagedPath, { recursive: true }); staged.push(relative(workspace, file)); }
       catch (e) { errors.push({ file, error: e.message }); }
     }
@@ -89,12 +92,12 @@ class VersionControl {
   getHistory(limit = 10, file = null) {
     const indexPath = join(this.historyDir, 'index.json');
     if (!existsSync(indexPath)) return [];
-    let history = JSON.parse(readFileSync(indexPath, 'utf8'));
+    let history = safeJsonParse(readFileSync(indexPath, 'utf8'), []);
     if (file) {
       history = history.filter(h => {
         const commitFile = join(this.historyDir, 'commits', h.id + '.json');
         if (existsSync(commitFile)) {
-          const commit = JSON.parse(readFileSync(commitFile, 'utf8'));
+          const commit = safeJsonParse(readFileSync(commitFile, 'utf8'), {});
           return commit.files.some(f => f.includes(file));
         }
         return false;
@@ -106,7 +109,7 @@ class VersionControl {
   getCommit(commitId) {
     const commitFile = join(this.historyDir, 'commits', commitId + '.json');
     if (!existsSync(commitFile)) return null;
-    return JSON.parse(readFileSync(commitFile, 'utf8'));
+    return safeJsonParse(readFileSync(commitFile, 'utf8'), null);
   }
 
   diff(commitId1, commitId2, file = null) {
@@ -164,7 +167,7 @@ class VersionControl {
   createStagedArchive(outputPath) {
     return new Promise((resolve, reject) => {
       const output = createWriteStream(outputPath);
-      const archive = archiver('zip', { zlib: { level: 9 } });
+      const archive = new ZipArchive({ zlib: { level: 9 } });
       output.on('close', () => resolve());
       archive.on('error', reject);
       archive.pipe(output);
@@ -188,13 +191,83 @@ class VersionControl {
 
   addToHistoryIndex(commit) {
     const indexPath = join(this.historyDir, 'index.json');
-    let history = existsSync(indexPath) ? JSON.parse(readFileSync(indexPath, 'utf8')) : [];
+    let history = existsSync(indexPath) ? safeJsonParse(readFileSync(indexPath, 'utf8'), []) : [];
     history.unshift({ id: commit.id, timestamp: commit.timestamp, message: commit.message });
     writeFileSync(indexPath, JSON.stringify(history, null, 2));
   }
 
   extractArchive(archivePath, targetDir, specificFile = null) {
-    return { extracted: true, path: targetDir };
+    try {
+      const data = readFileSync(archivePath);
+      const extracted = [];
+
+      let offset = 0;
+      while (offset < data.length - 4) {
+        const sig = data.readUInt32LE(offset);
+        if (sig !== 0x04034b50) break; // Not a local file header
+
+        const flags = data.readUInt16LE(offset + 6);
+        const compressionMethod = data.readUInt16LE(offset + 8);
+        let compressedSize = data.readUInt32LE(offset + 18);
+        const fileNameLen = data.readUInt16LE(offset + 26);
+        const extraFieldLen = data.readUInt16LE(offset + 28);
+        const fileName = data.toString('utf8', offset + 30, offset + 30 + fileNameLen);
+        const dataStart = offset + 30 + fileNameLen + extraFieldLen;
+
+        const hasDataDescriptor = (flags & 0x0008) !== 0 || compressedSize === 0;
+        let dataEnd = dataStart + compressedSize;
+        let descriptorLen = 0;
+
+        if (hasDataDescriptor) {
+          let search = dataStart;
+          while (search < data.length - 4) {
+            const s = data.readUInt32LE(search);
+            if (s === 0x08074b50) { // Data descriptor signature
+              dataEnd = search;
+              descriptorLen = 16;
+              break;
+            } else if (s === 0x04034b50 || s === 0x02014b50) {
+              dataEnd = search;
+              descriptorLen = 0;
+              break;
+            }
+            search++;
+          }
+          if (search >= data.length - 4 && dataEnd === dataStart) {
+            dataEnd = data.length;
+          }
+        }
+
+        const compressedData = data.subarray(dataStart, dataEnd);
+
+        // Skip directories and filter by specificFile if provided
+        if (!fileName.endsWith('/')) {
+          if (!specificFile || fileName === specificFile || basename(fileName) === specificFile) {
+            let fileData;
+            if (compressionMethod === 0) {
+              fileData = compressedData;
+            } else if (compressionMethod === 8) {
+              fileData = inflateRawSync(compressedData);
+            } else {
+              offset = dataEnd + descriptorLen;
+              continue;
+            }
+
+            const outPath = join(targetDir, fileName);
+            const outDir = join(targetDir, fileName.split('/').slice(0, -1).join('/'));
+            if (outDir && !existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+            writeFileSync(outPath, fileData);
+            extracted.push(fileName);
+          }
+        }
+
+        offset = dataEnd + descriptorLen;
+      }
+
+      return { extracted: true, path: targetDir, files: extracted, count: extracted.length };
+    } catch (e) {
+      return { extracted: false, error: e.message, path: targetDir };
+    }
   }
 }
 

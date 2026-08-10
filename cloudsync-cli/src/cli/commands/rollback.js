@@ -6,7 +6,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
+import { safeJsonParse } from '../../utils/security.js';
 
 
 const rollbackCommand = new Command('rollback')
@@ -24,7 +24,7 @@ const rollbackCommand = new Command('rollback')
       return;
     }
 
-    const history = JSON.parse(readFileSync(indexFile, 'utf8'));
+    const history = safeJsonParse(readFileSync(indexFile, 'utf8'), {});
     const targetVersion = history.find(h => h.id === versionId);
 
     if (!targetVersion) {
@@ -41,7 +41,7 @@ const rollbackCommand = new Command('rollback')
       return;
     }
 
-    const commit = JSON.parse(readFileSync(commitFile, 'utf8'));
+    const commit = safeJsonParse(readFileSync(commitFile, 'utf8'), {});
 
     console.log(chalk.cyan('\n⏪ CloudSync Rollback'));
     console.log(chalk.gray('━'.repeat(60)));
@@ -67,6 +67,29 @@ const rollbackCommand = new Command('rollback')
 
     console.log(chalk.cyan('\n🔄 Performing rollback...'));
 
+    // Extract the archive to restore files
+    const archivePath = join(commitsDir, `${versionId}.zip`);
+    let extractedCount = 0;
+    if (existsSync(archivePath)) {
+      try {
+        const { VersionControl } = await import('../../core/vcs/index.js');
+        const vcs = new VersionControl();
+        const result = vcs.extractArchive(archivePath, process.cwd(), options.file || null);
+        if (result.extracted) {
+          extractedCount = result.count || 0;
+          if (verbose && result.files) {
+            result.files.forEach(f => console.log(chalk.gray(`   📄 Restored: ${f}`)));
+          }
+        } else {
+          console.log(chalk.yellow(`   ⚠️ Archive extraction issue: ${result.error || 'Unknown'}`));
+        }
+      } catch (e) {
+        console.log(chalk.yellow(`   ⚠️ Could not extract archive: ${e.message}`));
+      }
+    } else {
+      console.log(chalk.yellow('   ⚠️ Archive not found - recording rollback metadata only'));
+    }
+
     // Create rollback commit record
     const rollbackRecord = {
       id: `rollback-${Date.now()}`,
@@ -74,6 +97,7 @@ const rollbackCommand = new Command('rollback')
       targetVersion: versionId,
       timestamp: new Date().toISOString(),
       files: commit.files,
+      filesRestored: extractedCount,
       message: `Rollback to: ${commit.message || 'previous version'}`
     };
 
@@ -93,6 +117,7 @@ const rollbackCommand = new Command('rollback')
 
     console.log(chalk.green('\n✅ Rollback complete!'));
     console.log(chalk.gray(`   Restored to version: ${versionId}`));
+    console.log(chalk.gray(`   Files restored: ${extractedCount}`));
     console.log(chalk.gray(`   Rollback ID: ${rollbackRecord.id}`));
     console.log(chalk.yellow('\n💡 Note: Changes have been reverted but can be restored by rolling forward'));
   });

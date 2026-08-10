@@ -10,6 +10,7 @@ import { createHash, randomBytes } from 'crypto';
 import http from 'http';
 import url from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import { RateLimiter, safePath, isValidPort } from '../../utils/security.js';
 
 const shareCommand = new Command('share')
   .description('🔗 Generate shareable session links for file access')
@@ -102,18 +103,39 @@ function saveSession(session, verbose) {
 }
 
 async function startShareServer(session, options, verbose) {
+  const rateLimiter = new RateLimiter(60, 60000); // 60 req/min per IP
+
   const server = http.createServer((req, res) => {
+    const clientIp = req.socket.remoteAddress || 'unknown';
     const parsedUrl = url.parse(req.url, true);
     const pathname = parsedUrl.pathname;
+
+    // Rate limiting
+    if (!rateLimiter.isAllowed(clientIp)) {
+      res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '60' });
+      res.end('Too many requests. Try again later.');
+      return;
+    }
+
+    // Only allow GET and OPTIONS
+    if (req.method !== 'GET' && req.method !== 'OPTIONS') {
+      res.writeHead(405, { 'Content-Type': 'text/plain' });
+      res.end('Method not allowed');
+      return;
+    }
 
     // Update connection count
     session.accessCount++;
     saveSession(session, verbose);
 
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    // Security headers
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'none'");
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
 
     if (pathname === '/favicon.ico') {
       res.writeHead(204);
@@ -144,12 +166,13 @@ async function startShareServer(session, options, verbose) {
       if (new Date() > new Date(session.expiresAt)) {
         res.writeHead(410);
         res.end('Share link expired');
+        server.close();
         return;
       }
 
       // Serve share page
       const html = generateSharePage(session, verbose);
-      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(html);
       return;
     }
@@ -157,6 +180,11 @@ async function startShareServer(session, options, verbose) {
     res.writeHead(404);
     res.end('Not found');
   });
+
+  // Server hardening
+  server.timeout = 30000; // 30s request timeout
+  server.maxHeadersCount = 50;
+  server.headersTimeout = 15000;
 
   return new Promise((resolve) => {
     server.listen(options.port, () => {
@@ -285,12 +313,13 @@ function generateSharePage(session, verbose) {
       </div>
       
       <div class="path-display">
-        📁 ${session.path}
+        📁 ${pathName}
       </div>
       
       <div class="token-box">
         <div class="label">🔑 Session Token</div>
-        <div class="token">${session.token}</div>
+        <div class="token">${session.token.slice(0, 4)}${'*'.repeat(Math.min(session.token.length - 8, 16))}${session.token.slice(-4)}</div>
+        <div style="margin-top:8px;font-size:0.8rem;color:#999">Full token available on the server console only</div>
       </div>
       
       <div class="status">

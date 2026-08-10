@@ -26,13 +26,14 @@ class CryptoUtils {
 
   static hashPassword(password, salt = null) {
     const useSalt = salt || randomBytes(16).toString('hex');
-    const hash = createHash('sha256').update(password + useSalt).digest('hex');
+    const hash = crypto.scryptSync(password, useSalt, 64).toString('hex');
     return { hash, salt: useSalt };
   }
 
   static verifyPassword(password, hash, salt) {
-    const result = createHash('sha256').update(password + salt).digest('hex');
-    return result === hash;
+    const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+    if (derived.length !== hash.length) return false;
+    return timingSafeEqual(Buffer.from(derived), Buffer.from(hash));
   }
 
   static encrypt(data, key) {

@@ -6,19 +6,23 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
-const LOGS_DIR = join(process.cwd(), '.cloudsync', 'logs');
+function getLogsDir() {
+  return join(process.cwd(), '.cloudsync', 'logs');
+}
 
 function ensureLogsDir() {
-  if (!existsSync(LOGS_DIR)) {
-    mkdirSync(LOGS_DIR, { recursive: true });
+  const logsDir = getLogsDir();
+  if (!existsSync(logsDir)) {
+    mkdirSync(logsDir, { recursive: true });
   }
+  return logsDir;
 }
 
 /**
  * Log an operation
  */
 export function logOperation(type, message, meta = {}) {
-  ensureLogsDir();
+  const logsDir = ensureLogsDir();
   
   const timestamp = new Date().toISOString();
   const logEntry = {
@@ -29,7 +33,7 @@ export function logOperation(type, message, meta = {}) {
   };
   
   const filename = `op-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.json`;
-  writeFileSync(join(LOGS_DIR, filename), JSON.stringify(logEntry, null, 2));
+  writeFileSync(join(logsDir, filename), JSON.stringify(logEntry, null, 2));
   
   return logEntry;
 }
@@ -38,10 +42,10 @@ export function logOperation(type, message, meta = {}) {
  * Get recent log entries
  */
 export function getRecentLogs(limit = 20, type = 'all') {
-  ensureLogsDir();
+  const logsDir = ensureLogsDir();
   
   try {
-    const files = readdirSync(LOGS_DIR)
+    const files = readdirSync(logsDir)
       .filter(f => f.endsWith('.json'))
       .sort()
       .reverse()
@@ -50,7 +54,7 @@ export function getRecentLogs(limit = 20, type = 'all') {
     const logs = [];
     for (const file of files) {
       try {
-        const log = JSON.parse(readFileSync(join(LOGS_DIR, file), 'utf8'));
+        const log = JSON.parse(readFileSync(join(logsDir, file), 'utf8')); // Safe: in try-catch
         if (type === 'all' || log.type === type) {
           logs.push(log);
         }

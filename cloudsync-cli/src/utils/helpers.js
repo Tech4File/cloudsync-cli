@@ -2,7 +2,7 @@
  * Utility helpers for CloudSync-CLI
  */
 
-import { readdirSync, statSync } from 'fs';
+import { readdirSync, statSync, readFileSync } from 'fs';
 import { join, extname, basename } from 'path';
 
 /**
@@ -195,8 +195,7 @@ export async function retry(fn, maxAttempts = 3, baseDelay = 1000) {
  */
 export function validateSSHKey(keyPath) {
   try {
-    const fs = require('fs');
-    const content = fs.readFileSync(keyPath, 'utf8');
+    const content = readFileSync(keyPath, 'utf8');
     
     // Check for valid SSH key headers
     const validHeaders = [

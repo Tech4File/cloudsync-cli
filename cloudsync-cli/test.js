@@ -23,12 +23,12 @@ if (!existsSync(TEST_DIR)) {
   mkdirSync(TEST_DIR, { recursive: true });
 }
 
-function run(cmd, dir = process.cwd()) {
+function run(cmd, dir = process.cwd(), timeout = 10000) {
   try {
     return execSync(`node ${CLI_PATH} ${cmd}`, { 
       encoding: 'utf8', 
       cwd: dir,
-      timeout: 10000 
+      timeout 
     });
   } catch (e) {
     return e.stdout || e.message;
@@ -69,8 +69,8 @@ test('Init Command', configExists);
 const status = run('status', TEST_DIR);
 test('Status Command', status.includes('Initialized'));
 
-// Test 5: Doctor
-const doctor = run('doctor');
+// Test 5: Doctor (longer timeout for SSH connectivity check)
+const doctor = run('doctor', process.cwd(), 20000);
 test('Doctor Command', doctor.includes('Summary'));
 
 // Test 6: Stage

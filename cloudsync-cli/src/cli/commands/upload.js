@@ -6,11 +6,12 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync, statSync, readdirSync, createReadStream, createWriteStream, writeFileSync, mkdirSync } from 'fs';
 import { join, relative, basename } from 'path';
-import { fileURLToPath } from 'url';
-import archiver from 'archiver';
+import { homedir } from 'os';
+import { ZipArchive } from 'archiver';
 import { Client as SSHClient } from 'ssh2';
 import crypto from 'crypto';
 import { logOperation } from '../../utils/logger.js';
+import { safeJsonParse, safePath } from '../../utils/security.js';
 
 
 const uploadCommand = new Command('upload')
@@ -37,7 +38,7 @@ const uploadCommand = new Command('upload')
       return;
     }
 
-    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    const config = safeJsonParse(readFileSync(configPath, 'utf8'), { profiles: {}, settings: {} });
     const profile = config.profiles[options.profile] || config.profiles[config.settings.defaultProfile];
     
     if (!profile) {
@@ -133,7 +134,7 @@ function collectFiles(dir, specificFiles, excludePatterns, includePatterns, verb
     
     for (const entry of entries) {
       const fullPath = join(currentDir, entry.name);
-      const relativePath = fullPath.replace(process.cwd() + '/', '');
+      const relativePath = relative(process.cwd(), fullPath);
       
       if (shouldExclude(relativePath)) {
         if (verbose) console.log(chalk.gray(`   Excluded: ${relativePath}`));
@@ -174,7 +175,7 @@ function collectFiles(dir, specificFiles, excludePatterns, includePatterns, verb
 function createArchive(workspace, files, outputPath, verbose) {
   return new Promise((resolve, reject) => {
     const output = createWriteStream(outputPath);
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = new ZipArchive({ zlib: { level: 9 } });
 
     output.on('close', () => {
       if (verbose) {
@@ -212,7 +213,7 @@ function saveHistory(entry, verbose) {
   const indexFile = join(process.cwd(), '.cloudsync', 'history', 'index.json');
   let index = [];
   if (existsSync(indexFile)) {
-    index = JSON.parse(readFileSync(indexFile, 'utf8'));
+    index = safeJsonParse(readFileSync(indexFile, 'utf8'), []);
   }
   index.unshift({ id: entry.id, timestamp: entry.timestamp, message: entry.message });
   writeFileSync(indexFile, JSON.stringify(index, null, 2));
@@ -224,7 +225,7 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
   const host = profile.host;
   const port = profile.port || 22;
   const username = profile.user;
-  const keyPath = profile.key || join(process.homeDir(), '.ssh', 'id_rsa');
+  const keyPath = profile.key || join(homedir(), '.ssh', 'id_rsa');
 
   if (verbose) {
     console.log(chalk.gray(`\n🔌 Connecting to ${username}@${host}:${port}`));

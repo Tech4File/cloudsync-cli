@@ -5,8 +5,8 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, statSync } from 'fs';
-import { join, relative, basename } from 'path';
-import { fileURLToPath } from 'url';
+import { join, relative, basename, dirname } from 'path';
+import { formatBytes } from '../../utils/helpers.js';
 
 
 const stageCommand = new Command('stage')
@@ -93,7 +93,9 @@ const stageCommand = new Command('stage')
 function stageFile(filePath, stagedFiles, stagingDir, verbose) {
   try {
     const relPath = relative(process.cwd(), filePath);
-    const stagedPath = join(stagingDir, basename(filePath));
+    // Preserve directory structure: use safe path separator for subdirs
+    const safeName = relPath.replace(/[\\/]/g, '__');
+    const stagedPath = join(stagingDir, safeName);
     
     // Copy to staging area
     copyFileSync(filePath, stagedPath);
@@ -144,12 +146,6 @@ function saveStagedIndex(files, verbose) {
   if (verbose) console.log(chalk.gray(`Staging index saved`));
 }
 
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
+
 
 export default stageCommand;

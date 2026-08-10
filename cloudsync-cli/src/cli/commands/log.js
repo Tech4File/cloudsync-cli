@@ -6,7 +6,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
+import { safeJsonParse } from '../../utils/security.js';
 
 
 const logCommand = new Command('log')

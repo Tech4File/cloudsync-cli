@@ -16,12 +16,13 @@
     "format": "prettier --write \"**/*.js\" || true",
     "format:check": "prettier --check \"**/*.js\" || true",
     "build": "node scripts/build.mjs",
-    "pkg:linux": "pkg bin/cloudsync.js -t node20-linux-x64 -o dist/cloudsync-linux",
-    "pkg:macos": "pkg bin/cloudsync.js -t node20-macos-x64 -o dist/cloudsync-macos",
-    "pkg:win": "pkg bin/cloudsync.js -t node20-win-x64 -o dist/cloudsync-win.exe",
+    "pkg:linux": "yao-pkg bin/cloudsync.js -t node22-linux-x64 -o dist/cloudsync-linux",
+    "pkg:macos": "yao-pkg bin/cloudsync.js -t node22-macos-x64 -o dist/cloudsync-macos",
+    "pkg:win": "yao-pkg bin/cloudsync.js -t node22-win-x64 -o dist/cloudsync-win.exe",
     "pkg:all": "npm run pkg:linux && npm run pkg:macos && npm run pkg:win",
+    "audit": "npm audit --production",
     "postinstall": "echo 'CloudSync-CLI installed successfully!'",
-    "build:binary": "node scripts/build.mjs && pkg dist/bundle.cjs -t node22-linux-x64 -o dist/cloudsync"
+    "build:binary": "node scripts/build.mjs && yao-pkg dist/bundle.cjs -t node22-linux-x64 -o dist/cloudsync"
   },
   "keywords": [
     "cli",
@@ -68,18 +69,18 @@
     "url": "https://github.com/sponsors/Tech4File"
   },
   "dependencies": {
-    "archiver": "^7.0.1",
-    "chalk": "^4.1.2",
-    "commander": "^12.1.0",
+    "archiver": "^8.0.0",
+    "chalk": "^5.6.2",
+    "commander": "^15.0.0",
     "diff-match-patch": "^1.0.5",
-    "figlet": "^1.11.0",
-    "ssh2": "^1.15.0",
+    "figlet": "^1.11.4",
+    "ssh2": "^1.17.0",
     "uuid": "^14.0.1"
   },
   "devDependencies": {
-    "esbuild": "^0.28.1",
-    "eslint": "^8.54.0",
-    "pkg": "^5.8.1"
+    "@yao-pkg/pkg": "^6.22.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.8.1"
   },
   "engines": {
     "node": ">=18.0.0"

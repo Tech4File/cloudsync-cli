@@ -14,18 +14,27 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ── Ensure .cloudsync directories exist ──────────────────
-const csyncDir = join(process.cwd(), '.cloudsync');
-[
-  csyncDir,
-  join(csyncDir, 'staging'),
-  join(csyncDir, 'history', 'commits'),
-  join(csyncDir, 'history', 'diffs'),
-  join(csyncDir, 'cache'),
-  join(csyncDir, 'logs'),
-].forEach((dir) => {
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-});
+// ── Ensure .cloudsync directories exist (only for real commands) ──
+function ensureDirs() {
+  const csyncDir = join(process.cwd(), '.cloudsync');
+  [
+    csyncDir,
+    join(csyncDir, 'staging'),
+    join(csyncDir, 'history', 'commits'),
+    join(csyncDir, 'history', 'diffs'),
+    join(csyncDir, 'cache'),
+    join(csyncDir, 'logs'),
+  ].forEach((dir) => {
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  });
+}
+
+// Only create dirs when a real command is being run (not --help/--version)
+const helpFlags = ['--help', '-h', '--version', '-v', '-V'];
+const isHelpOrVersion = process.argv.length <= 2 || process.argv.some(a => helpFlags.includes(a));
+if (!isHelpOrVersion) {
+  ensureDirs();
+}
 
 // ── Global error handlers ────────────────────────────────
 process.on('uncaughtException', (err) => {
