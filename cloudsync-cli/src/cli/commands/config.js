@@ -26,9 +26,9 @@ const configCommand = new Command('config')
     
     const configPath = join(configDir, 'config.json');
 
-    // Ensure config directory exists
+    // Ensure config directory exists for read operation
     if (!existsSync(configDir)) {
-      if (key || value) {
+      if (key && !value) {
         console.log(chalk.yellow('⚠️ No config found. Run: cloudsync init'));
         return;
       }
@@ -176,11 +176,15 @@ function unsetNestedKey(obj, keys) {
 }
 
 function parseValue(value) {
-  // Try to parse as JSON safely
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (!isNaN(Number(value)) && value.trim() !== '') return Number(value);
   try {
-    const parsed = safeJsonParse(value, undefined);
-    if (parsed !== undefined) return parsed;
-    return value;
+    const parsed = JSON.parse(value);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return parsed;
+    }
+    return parsed;
   } catch {
     return value;
   }

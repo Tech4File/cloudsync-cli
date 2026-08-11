@@ -3,6 +3,8 @@
 <div align="center">
 
 [![npm version](https://img.shields.io/npm/v/cloudsync-cli.svg?style=for-the-badge&color=cb3837)](https://www.npmjs.com/package/cloudsync-cli)
+[![npm downloads](https://img.shields.io/npm/dm/cloudsync-cli.svg?style=for-the-badge&color=cb3837)](https://www.npmjs.com/package/cloudsync-cli)
+[![npm total downloads](https://img.shields.io/npm/dt/cloudsync-cli.svg?style=for-the-badge&color=cb3837)](https://www.npmjs.com/package/cloudsync-cli)
 [![GitHub Packages](https://img.shields.io/badge/GitHub%20Packages-@tech4file/cloudsync--cli-blue?style=for-the-badge&logo=github)](https://github.com/Tech4File/cloudsync-cli/packages)
 [![GitHub release](https://img.shields.io/github/v/release/Tech4File/cloudsync-cli?style=for-the-badge&color=2da44e)](https://github.com/Tech4File/cloudsync-cli/releases)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)

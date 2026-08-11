@@ -25,7 +25,7 @@ const diffCommand = new Command('diff')
       return;
     }
 
-    const history = safeJsonParse(readFileSync(indexFile, 'utf8'), {});
+    const history = safeJsonParse(readFileSync(indexFile, 'utf8'), []);
     
     // Default to last 2 versions
     if (versions.length === 0) {

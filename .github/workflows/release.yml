@@ -103,12 +103,12 @@ jobs:
           cache-dependency-path: cloudsync-cli/package-lock.json
       - run: npm ci
       - run: npm run build
-      - run: npx @yao-pkg/pkg dist/bundle.cjs -t node22-linux-x64 -o cloudsync
-      - run: chmod +x cloudsync && ./cloudsync --version
+      - run: npx @yao-pkg/pkg dist/bundle.cjs -t node22-linux-x64 -o cloudsync-linux-x64
+      - run: chmod +x cloudsync-linux-x64 && ./cloudsync-linux-x64 --version
       - uses: actions/upload-artifact@v4
         with:
           name: linux-build
-          path: cloudsync-cli/cloudsync
+          path: cloudsync-cli/cloudsync-linux-x64
           retention-days: 7
 
   build-macos:
@@ -125,12 +125,12 @@ jobs:
           cache-dependency-path: cloudsync-cli/package-lock.json
       - run: npm ci
       - run: npm run build
-      - run: npx @yao-pkg/pkg dist/bundle.cjs -t node22-macos-x64 -o cloudsync
-      - run: chmod +x cloudsync && ./cloudsync --version
+      - run: npx @yao-pkg/pkg dist/bundle.cjs -t node22-macos-x64 -o cloudsync-macos-x64
+      - run: chmod +x cloudsync-macos-x64 && ./cloudsync-macos-x64 --version
       - uses: actions/upload-artifact@v4
         with:
           name: macos-build
-          path: cloudsync-cli/cloudsync
+          path: cloudsync-cli/cloudsync-macos-x64
           retention-days: 7
 
   publish:
@@ -214,8 +214,8 @@ jobs:
             cloudsync-cli/assets/windows/cloudsync-windows-x64.zip
             cloudsync-cli/assets/windows/CloudSync-Setup.bat
             cloudsync-cli/assets/windows/CloudSync.iss
-            cloudsync-cli/assets/linux/cloudsync
-            cloudsync-cli/assets/macos/cloudsync
+            cloudsync-cli/assets/linux/cloudsync-linux-x64
+            cloudsync-cli/assets/macos/cloudsync-macos-x64
             cloudsync-cli/assets/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

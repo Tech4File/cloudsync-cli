@@ -54,13 +54,16 @@ const unstageCommand = new Command('unstage')
       
       let count = 0;
       files.forEach(f => {
-        const stagedName = f.split('/').pop();
-        const path = join(stagingDir, stagedName);
+        const safeName = f.replace(/[\\/]/g, '__');
+        const path1 = join(stagingDir, safeName);
+        const path2 = join(stagingDir, f);
+        const path3 = join(stagingDir, f.split(/[\\/]/).pop());
+        const targetPath = existsSync(path1) ? path1 : (existsSync(path2) ? path2 : path3);
         
-        if (existsSync(path)) {
-          unlinkSync(path);
+        if (existsSync(targetPath)) {
+          unlinkSync(targetPath);
           count++;
-          if (verbose) console.log(chalk.red(`   - ${stagedName}`));
+          if (verbose) console.log(chalk.red(`   - ${f}`));
         } else {
           console.log(chalk.yellow(`   ⚠️ Not staged: ${f}`));
         }

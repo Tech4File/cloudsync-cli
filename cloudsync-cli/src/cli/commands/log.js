@@ -45,9 +45,9 @@ const logCommand = new Command('log')
     const logs = [];
     for (const file of logFiles) {
       try {
-        const log = JSON.parse(readFileSync(join(logsDir, file), 'utf8'));
+        const log = safeJsonParse(readFileSync(join(logsDir, file), 'utf8'), null);
         
-        if (options.type !== 'all' && log.type !== options.type) {
+        if (!log || (options.type !== 'all' && log.type !== options.type)) {
           continue;
         }
         
