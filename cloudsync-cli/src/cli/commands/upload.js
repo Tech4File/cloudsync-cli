@@ -4,14 +4,14 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { readFileSync, existsSync, statSync, readdirSync, createReadStream, createWriteStream, writeFileSync, mkdirSync } from 'fs';
-import { join, relative, basename } from 'path';
+import { readFileSync, existsSync, readdirSync, createWriteStream, writeFileSync, mkdirSync } from 'fs';
+import { join, relative } from 'path';
 import { homedir } from 'os';
 import { ZipArchive } from 'archiver';
 import { Client as SSHClient } from 'ssh2';
 import crypto from 'crypto';
 import { logOperation } from '../../utils/logger.js';
-import { safeJsonParse, safePath } from '../../utils/security.js';
+import { safeJsonParse } from '../../utils/security.js';
 
 
 const uploadCommand = new Command('upload')
@@ -24,6 +24,7 @@ const uploadCommand = new Command('upload')
   .option('--force', 'Force overwrite remote files', false)
   .option('--compress <method>', 'Compression method (zip/lz4/zstd)', 'zip')
   .option('--chunk-size <MB>', 'Chunk size in MB for large files', (v) => parseFloat(v), 10)
+  .option('-j, --concurrency <number>', 'Number of concurrent transfer streams', (v) => parseInt(v, 10), 4)
   .option('--protocol <proto>', 'Transport protocol', /^(ssh|scp|sftp|rsync|websocket|ws|pipe|hybrid|zip|chunked|http)$/i, 'ssh')
   .option('--verbose', 'Show detailed transfer progress', false)
   .option('--dry-run', 'Preview without transferring', false)

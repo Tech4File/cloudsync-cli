@@ -84,27 +84,43 @@ CloudSync-CLI brings **Git-like version control** to sensitive configuration fil
 
 ---
 
-### Via npm (Global - npmjs.org)
+## 💻 Installation Options
+
+### 1. One-Line Automated Installers (Recommended)
+
+#### 🐧 Linux & 🍏 macOS (curl / bash)
+```bash
+curl -fsSL https://raw.githubusercontent.com/Tech4File/cloudsync-cli/main/installer/install.sh | bash
+```
+
+#### 🪟 Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/Tech4File/cloudsync-cli/main/installer/Install-CloudSync.ps1 | iex
+```
+
+### 2. Via npm (Global - npmjs.org)
 
 ```bash
 npm install -g cloudsync-cli
 ```
 
-### Via GitHub Packages (GPR)
+### 3. Via GitHub Packages (GPR)
 
 ```bash
 npm install -g @tech4file/cloudsync-cli --registry=https://npm.pkg.github.com
 ```
 
-### Standalone Executable Binaries (Windows / Linux / macOS)
+### 4. Standalone Executable Binaries (Windows / Linux / macOS)
 
-Download pre-compiled single-executable binaries (`cloudsync.exe`, `cloudsync` Linux/macOS) directly from the [GitHub Releases Page](https://github.com/Tech4File/cloudsync-cli/releases).
+Download pre-compiled single-executable binaries directly from the [GitHub Releases Page](https://github.com/Tech4File/cloudsync-cli/releases):
+- 🪟 `cloudsync.exe` / `cloudsync-windows-x64.zip` (Windows x64)
+- 🐧 `cloudsync-linux-x64` (Linux x64)
+- 🍏 `cloudsync-macos-x64` (macOS Intel & Apple Silicon)
 
 ### Verify Installation
 
 ```bash
 cloudsync --version
-# cloudsync/1.0.0 linux-x64 node-v18.17.0
 ```
 
 ---
@@ -191,44 +207,46 @@ cloudsync sync --strategy local --verbose
 ### Core Commands
 
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `cloudsync init` | Initialize configuration profile |
-| `cloudsync upload [files]` | Upload files to remote |
-| `cloudsync download [files]` | Download files from remote |
-| `cloudsync sync` | Bidirectional synchronization |
-| `cloudsync port <local:remote>` | Create SSH tunnel |
-| `cloudsync share [path]` | Generate shareable session link |
+| `cloudsync upload [files]` | Upload files to remote with version tracking |
+| `cloudsync download [files]` | Download files from remote with version history |
+| `cloudsync sync` | Bidirectional synchronization with conflict resolution |
+| `cloudsync fetch <target>` | 📥 Receive shared files directly from an active share session |
+| `cloudsync port <local:remote>` | Create SSH tunnel / port forwarding |
+| `cloudsync share [path]` | Generate shareable session link with optional password |
 
 ### Version Control Commands
 
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `cloudsync stage [files]` | Stage files for commit |
-| `cloudsync unstage [files]` | Remove from staging |
+| `cloudsync unstage [files]` | Remove from staging area |
 | `cloudsync commit [msg]` | Commit staged changes |
 | `cloudsync history` | View commit history |
 | `cloudsync diff [versions]` | Compare versions |
-| `cloudsync rollback <version>` | Revert to version |
-| `cloudsync status` | Show repository status |
+| `cloudsync rollback <version>` | Revert to previous version |
+| `cloudsync status` | Show current repository & staging status |
 | `cloudsync log` | View operation logs |
 
 ### Utility Commands
 
 | Command | Description |
-|---------|-------------|
-| `cloudsync config [key] [value]` | Manage configuration |
-| `cloudsync doctor` | Run diagnostics |
-| `cloudsync clone <remote>` | Clone remote workspace |
-| `cloudsync help [topic]` | Show help |
+|---|---|
+| `cloudsync ignore [options]` | 🛡️ Generate or manage `.cloudsyncignore` rules |
+| `cloudsync config [key] [value]` | Manage configuration profiles and settings |
+| `cloudsync doctor` | Run environment diagnostics & connectivity checks |
+| `cloudsync clone <remote>` | Clone remote workspace structure |
+| `cloudsync help [topic]` | Show help information |
 
 ### Global Flags
 
 | Flag | Description |
-|------|-------------|
+|---|---|
 | `-v, --verbose` | Enable verbose output |
 | `-q, --quiet` | Suppress messages |
-| `-c, --config <path>` | Custom config file |
-| `--no-color` | Disable colors |
+| `-c, --config <path>` | Custom config file path |
+| `--no-color` | Disable colorized terminal output |
 
 ---
 
@@ -245,6 +263,7 @@ cloudsync upload [files...]
   --force                   # Force overwrite
   --compress <method>       # zip|lz4|zstd (default: zip)
   --chunk-size <MB>        # Chunk size (default: 10)
+  -j, --concurrency <num>  # Concurrent transfer streams (default: 4)
   --protocol <proto>       # ssh|sftp|rsync|websocket|pipe
   --verbose                # Detailed progress
   --dry-run                # Preview only
@@ -259,10 +278,33 @@ cloudsync download [files...]
   --exclude <patterns>     # Skip certain files
   --version <id>          # Specific version
   --latest                # Fetch latest
+  -j, --concurrency <num>  # Concurrent transfer streams (default: 4)
   --verbose               # Detailed progress
   --dry-run               # Preview only
   --profile <name>        # Config profile
   --output <path>         # Output directory
+```
+
+### `commit` Options
+
+```bash
+cloudsync commit [message]
+  --amend                 # Amend the last commit
+  -e, --encrypt           # Encrypt snapshot archive on disk with AES-256-GCM
+  -p, --passphrase <pwd>  # Passphrase for AES-256-GCM encryption
+  --no-verify             # Skip pre-commit hooks
+  --verbose               # Show detailed commit metadata
+  --dry-run               # Preview without committing
+```
+
+### `rollback` Options
+
+```bash
+cloudsync rollback <version-id>
+  --file <path>           # Specific file to rollback (default: all)
+  -p, --passphrase <pwd>  # Passphrase for AES-256-GCM encrypted snapshot
+  --force                 # Skip confirmation prompt
+  --verbose               # Detailed restoration logs
 ```
 
 ### `sync` Options
@@ -290,6 +332,27 @@ cloudsync share [path]
   --verbose               # Show details
   --open                  # Auto-open URL
   --profile <name>        # Config profile
+```
+
+### `fetch` Options
+
+```bash
+cloudsync fetch <url-or-id>
+  --host <hostname>       # Remote host (if target is Share ID) (default: 127.0.0.1)
+  --port <number>         # Remote port (if target is Share ID) (default: 3000)
+  --password <pwd>         # Password if session is protected
+  --output <path>         # Output directory (default: ./)
+  --verbose               # Show download progress
+```
+
+### `ignore` Options
+
+```bash
+cloudsync ignore
+  -t, --template <type>   # Preset: node|python|go|docker|general (default: node)
+  -s, --show              # Display current .cloudsyncignore rules
+  -a, --append            # Append preset to existing .cloudsyncignore
+  -f, --force             # Overwrite existing .cloudsyncignore file
 ```
 
 ### `port` Options
@@ -398,18 +461,21 @@ cloudsync config --unset profiles.production
 ```
 cloudsync-cli/
 ├── bin/
-│   └── cloudsync.js          # Entry point
+│   └── cloudsync.js          # CLI entry point
 ├── src/
 │   ├── cli/
-│   │   ├── index.js          # Commander.js setup
-│   │   └── commands/         # Command definitions
+│   │   ├── index.js          # Commander.js CLI engine
+│   │   └── commands/         # 19 command definitions
 │   │       ├── init.js
 │   │       ├── upload.js
 │   │       ├── download.js
 │   │       ├── sync.js
+│   │       ├── fetch.js      # CLI-to-CLI share receiver
+│   │       ├── ignore.js     # .cloudsyncignore generator
 │   │       ├── port.js
 │   │       ├── share.js
 │   │       ├── stage.js
+│   │       ├── unstage.js
 │   │       ├── commit.js
 │   │       ├── history.js
 │   │       ├── diff.js
@@ -419,9 +485,16 @@ cloudsync-cli/
 │   │       ├── doctor.js
 │   │       ├── clone.js
 │   │       └── log.js
-│   ├── transport/            # Protocol implementations
-│   ├── vcs/                  # Version control system
-│   └── utils/                # Helper functions
+│   ├── core/
+│   │   ├── transport/        # Multi-protocol transfer engine
+│   │   └── vcs/              # Git-like VCS & snapshot engine
+│   └── utils/
+│       ├── banner.js         # Native ASCII banner
+│       ├── update-check.js   # 24h cached NPM update notifier
+│       ├── logger.js         # Structured audit logging
+│       ├── security.js       # Sanitization & path guards
+│       └── helpers.js        # Formatting & utilities
+├── eslint.config.js          # ESLint v9/v10 flat configuration
 ├── package.json
 └── README.md
 ```

@@ -2,19 +2,18 @@
  * Version Control System - Git-like operations for CloudSync
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, statSync, cpSync, createWriteStream, createReadStream } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, cpSync, createWriteStream, statSync } from 'fs';
 import { join, relative, basename } from 'path';
 import { createHash, randomBytes } from 'crypto';
 import { ZipArchive } from 'archiver';
 import os from 'os';
-import DiffMatchPatch from 'diff-match-patch';
 import { inflateRawSync } from 'zlib';
 import { safeJsonParse } from '../../utils/security.js';
+import { encryptData, decryptData } from '../crypto/index.js';
 
 class VersionControl {
   constructor(options = {}) {
     this.options = options;
-    this.dmp = new DiffMatchPatch();
     this.historyDir = join(process.cwd(), '.cloudsync', 'history');
     this.stagingDir = join(process.cwd(), '.cloudsync', 'staging');
     this.cacheDir = join(process.cwd(), '.cloudsync', 'cache');
@@ -69,7 +68,7 @@ class VersionControl {
     return readdirSync(this.stagingDir).filter(f => !f.startsWith('.') && f !== 'index.json');
   }
 
-  commit(message, author = null) {
+  commit(message, author = null, passphrase = null) {
     const stagedFiles = this.getStagedFiles();
     if (stagedFiles.length === 0) throw new Error('Nothing to commit - staging area is empty');
     const commitId = this.generateCommitId();
@@ -77,10 +76,34 @@ class VersionControl {
     const archivePath = join(this.historyDir, 'commits', commitId + '.zip');
     this.createStagedArchive(archivePath);
     const checksum = this.calculateArchiveChecksum(archivePath);
+
+    // If passphrase provided, encrypt the archive on disk with AES-256-GCM
+    let isEncrypted = false;
+    if (passphrase) {
+      const plaintext = readFileSync(archivePath);
+      const encrypted = encryptData(plaintext, passphrase);
+      writeFileSync(archivePath, encrypted);
+      isEncrypted = true;
+    }
+
+    // Capture file metadata and permissions
+    const fileMetadata = {};
+    for (const f of stagedFiles) {
+      try {
+        const st = statSync(join(this.stagingDir, f));
+        fileMetadata[f] = { size: st.size, mode: st.mode };
+      } catch (e) {
+        fileMetadata[f] = { size: 0, mode: 0o644 };
+      }
+    }
+
     const commit = {
       id: commitId, message, timestamp,
       author: author || this.getDefaultAuthor(),
-      files: stagedFiles, checksum,
+      files: stagedFiles,
+      metadata: fileMetadata,
+      checksum,
+      encrypted: isEncrypted,
       parent: this.getLastCommitId()
     };
     writeFileSync(join(this.historyDir, 'commits', commitId + '.json'), JSON.stringify(commit, null, 2));
@@ -130,13 +153,15 @@ class VersionControl {
     return { from: commitId1, to: commitId2, stats: { added: diff.added.length, removed: diff.removed.length, modified: diff.modified.length }, ...diff };
   }
 
-  rollback(commitId, file = null) {
+  rollback(commitId, file = null, passphrase = null) {
     const commit = this.getCommit(commitId);
     if (!commit) throw new Error('Commit ' + commitId + ' not found');
     const rollbackId = this.generateCommitId('rollback');
     const timestamp = new Date().toISOString();
     const archivePath = join(this.historyDir, 'commits', commitId + '.zip');
-    if (existsSync(archivePath)) this.extractArchive(archivePath, process.cwd(), file);
+    if (existsSync(archivePath)) {
+      this.extractArchive(archivePath, process.cwd(), file, passphrase);
+    }
     const rollback = { id: rollbackId, type: 'rollback', targetCommit: commitId, message: commit.message, timestamp, files: file ? [file] : commit.files };
     writeFileSync(join(this.historyDir, 'commits', rollbackId + '.json'), JSON.stringify(rollback, null, 2));
     this.addToHistoryIndex(rollback);
@@ -177,7 +202,18 @@ class VersionControl {
   }
 
   calculateArchiveChecksum(archivePath) {
-    return createHash('sha256').update(readFileSync(archivePath)).digest('hex');
+    try {
+      const hash = createHash('sha256');
+      const data = readFileSync(archivePath);
+      // For large buffers (>10MB), update in 64KB chunks to maintain stream cache alignment
+      const CHUNK_SIZE = 64 * 1024;
+      for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+        hash.update(data.subarray(i, Math.min(i + CHUNK_SIZE, data.length)));
+      }
+      return hash.digest('hex');
+    } catch (e) {
+      return '';
+    }
   }
 
   getDefaultAuthor() {
@@ -196,9 +232,18 @@ class VersionControl {
     writeFileSync(indexPath, JSON.stringify(history, null, 2));
   }
 
-  extractArchive(archivePath, targetDir, specificFile = null) {
+  extractArchive(archivePath, targetDir, specificFile = null, passphrase = null) {
     try {
-      const data = readFileSync(archivePath);
+      let data = readFileSync(archivePath);
+
+      // Check if payload is encrypted (does not start with zip signature 0x04034b50)
+      if (data.length > 4 && data.readUInt32LE(0) !== 0x04034b50) {
+        if (!passphrase) {
+          throw new Error('This snapshot is encrypted with AES-256-GCM. Please provide --passphrase <secret>');
+        }
+        data = decryptData(data, passphrase);
+      }
+
       const extracted = [];
 
       let offset = 0;

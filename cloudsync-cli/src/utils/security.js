@@ -5,7 +5,7 @@
  * secure file operations, and content security validation.
  */
 
-import { resolve, normalize, relative, isAbsolute } from 'path';
+import { resolve, normalize } from 'path';
 import { existsSync, statSync } from 'fs';
 
 /**
@@ -85,7 +85,6 @@ export function safePath(inputPath, baseDir = process.cwd()) {
 export function sanitizeInput(input, maxLength = 1024) {
   if (typeof input !== 'string') return '';
   // Remove control characters except newline/tab
-  // eslint-disable-next-line no-control-regex
   let cleaned = input.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
   // Truncate to max length
   if (cleaned.length > maxLength) {

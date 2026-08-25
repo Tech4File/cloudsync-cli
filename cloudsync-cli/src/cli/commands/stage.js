@@ -4,8 +4,8 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { readFileSync, existsSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, statSync } from 'fs';
-import { join, relative, basename, dirname } from 'path';
+import { existsSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, statSync } from 'fs';
+import { join, relative } from 'path';
 import { formatBytes } from '../../utils/helpers.js';
 
 

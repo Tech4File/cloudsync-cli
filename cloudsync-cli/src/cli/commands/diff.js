@@ -6,7 +6,6 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import DiffMatchPatch from 'diff-match-patch';
 import { safeJsonParse } from '../../utils/security.js';
 
 

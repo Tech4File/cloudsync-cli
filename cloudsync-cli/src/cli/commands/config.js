@@ -7,7 +7,7 @@ import chalk from 'chalk';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { safeJsonParse, sanitizeInput } from '../../utils/security.js';
+import { safeJsonParse } from '../../utils/security.js';
 
 const configCommand = new Command('config')
   .description('⚙️ Manage CloudSync configuration')

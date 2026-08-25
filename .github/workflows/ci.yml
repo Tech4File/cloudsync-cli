@@ -17,7 +17,7 @@ jobs:
     defaults: { run: { working-directory: ./cloudsync-cli } }
     strategy:
       matrix:
-        node: ['18', '20', '22']
+        node: ['lts/*', '*']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

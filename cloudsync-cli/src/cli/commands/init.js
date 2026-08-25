@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { logOperation } from '../../utils/logger.js';
-import { isValidHost, isValidPort, isValidUsername, safeJsonParse, sanitizeInput } from '../../utils/security.js';
+import { isValidHost, isValidPort, safeJsonParse, sanitizeInput } from '../../utils/security.js';
 
 const initCommand = new Command('init')
   .description('Initialize CloudSync configuration profile')
@@ -57,8 +57,8 @@ const initCommand = new Command('init')
     const user = sanitizeInput(options.user || process.env.USER || 'user', 32);
     const port = options.port || 22;
     const keyPath = options.key || join(homedir(), '.ssh', 'id_rsa');
-    const protocol = options.protocol;
-    const workspace = options.workspace;
+    const protocol = options.protocol || 'ssh';
+    const workspace = options.workspace || process.cwd();
 
     // Validate inputs
     if (host !== 'your-server.com' && !isValidHost(host)) {

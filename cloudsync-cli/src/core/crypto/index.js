@@ -1,95 +1,70 @@
 /**
- * Crypto Utilities - Encryption, hashing, and secure operations
+ * crypto/index.js - Native AES-256-GCM Snapshot Encryption for CloudSync-CLI
+ * 
+ * Features:
+ * - Authenticated AES-256-GCM encryption with 128-bit authentication tag
+ * - Key derivation using Scrypt with cryptographically random 16-byte salt
+ * - Zero external dependencies (uses native node:crypto)
  */
 
-import crypto from 'crypto';
-const { createHash, randomBytes, createCipheriv, createDecipheriv, createHmac, timingSafeEqual } = crypto;
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 
-class CryptoUtils {
-  static sha256(data) {
-    return createHash('sha256').update(data).digest('hex');
-  }
+const ALGORITHM = 'aes-256-gcm';
+const SALT_LENGTH = 16;
+const IV_LENGTH = 12; // 96-bit standard for GCM
+const TAG_LENGTH = 16; // 128-bit auth tag
+const KEY_LENGTH = 32; // 256-bit key
 
-  static sha512(data) {
-    return createHash('sha512').update(data).digest('hex');
-  }
-
-  static generateToken(length = 32) {
-    return randomBytes(length).toString('hex');
-  }
-
-  static generateSessionId() {
-    const timestamp = Date.now().toString(36);
-    const random = randomBytes(4).toString('hex');
-    return `${timestamp}-${random}`;
-  }
-
-  static hashPassword(password, salt = null) {
-    const useSalt = salt || randomBytes(16).toString('hex');
-    const hash = crypto.scryptSync(password, useSalt, 64).toString('hex');
-    return { hash, salt: useSalt };
-  }
-
-  static verifyPassword(password, hash, salt) {
-    const derived = crypto.scryptSync(password, salt, 64).toString('hex');
-    if (derived.length !== hash.length) return false;
-    return timingSafeEqual(Buffer.from(derived), Buffer.from(hash));
-  }
-
-  static encrypt(data, key) {
-    const iv = randomBytes(16);
-    const cipher = createCipheriv('aes-256-gcm', Buffer.from(key, 'hex'), iv);
-    let encrypted = cipher.update(data, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    const authTag = cipher.getAuthTag();
-    return { encrypted, iv: iv.toString('hex'), authTag: authTag.toString('hex') };
-  }
-
-  static decrypt(encryptedData, key, iv, authTag) {
-    const decipher = createDecipheriv('aes-256-gcm', Buffer.from(key, 'hex'), Buffer.from(iv, 'hex'));
-    decipher.setAuthTag(Buffer.from(authTag, 'hex'));
-    let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-  }
-
-  static async fileChecksum(filePath, algorithm = 'sha256') {
-    const fs = await import('fs');
-    const hash = createHash(algorithm);
-    const stream = fs.createReadStream(filePath);
-    return new Promise((resolve, reject) => {
-      stream.on('data', data => hash.update(data));
-      stream.on('end', () => resolve(hash.digest('hex')));
-      stream.on('error', reject);
-    });
-  }
-
-  static secureRandom(size = 32) {
-    return randomBytes(size);
-  }
-
-  static hmac(data, key, algorithm = 'sha256') {
-    return createHmac(algorithm, key).update(data).digest('hex');
-  }
-
-  static verifyHmac(data, key, signature, algorithm = 'sha256') {
-    const computed = this.hmac(data, key, algorithm);
-    return timingSafeEqual(Buffer.from(computed), Buffer.from(signature));
-  }
-
-  static maskSensitive(data, visibleChars = 4) {
-    if (typeof data !== 'string') return data;
-    if (data.length <= visibleChars * 2) return '*'.repeat(data.length);
-    const start = data.slice(0, visibleChars);
-    const end = data.slice(-visibleChars);
-    const middle = '*'.repeat(Math.min(data.length - visibleChars * 2, 10));
-    return `${start}${middle}${end}`;
-  }
-
-  static sanitizeFilename(filename) {
-    return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-  }
+/**
+ * Derive 256-bit key from passphrase and salt using Scrypt
+ * @param {string} passphrase 
+ * @param {Buffer} salt 
+ * @returns {Buffer}
+ */
+export function deriveKey(passphrase, salt) {
+  return scryptSync(passphrase, salt, KEY_LENGTH, { N: 16384, r: 8, p: 1 });
 }
 
-export default CryptoUtils;
-export { CryptoUtils };
+/**
+ * Encrypt a buffer with AES-256-GCM
+ * @param {Buffer} data - Plaintext buffer
+ * @param {string} passphrase - User encryption secret
+ * @returns {Buffer} - Encrypted payload [salt (16b) + iv (12b) + tag (16b) + ciphertext]
+ */
+export function encryptData(data, passphrase) {
+  if (!passphrase) throw new Error('Passphrase is required for encryption');
+  const salt = randomBytes(SALT_LENGTH);
+  const iv = randomBytes(IV_LENGTH);
+  const key = deriveKey(passphrase, salt);
+
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
+  // Combine: salt (16) + iv (12) + tag (16) + ciphertext
+  return Buffer.concat([salt, iv, tag, encrypted]);
+}
+
+/**
+ * Decrypt an AES-256-GCM payload
+ * @param {Buffer} encryptedData - Combined payload
+ * @param {string} passphrase - User encryption secret
+ * @returns {Buffer} - Decrypted plaintext buffer
+ */
+export function decryptData(encryptedData, passphrase) {
+  if (!passphrase) throw new Error('Passphrase is required for decryption');
+  if (encryptedData.length < SALT_LENGTH + IV_LENGTH + TAG_LENGTH) {
+    throw new Error('Invalid or corrupted encrypted payload');
+  }
+
+  const salt = encryptedData.subarray(0, SALT_LENGTH);
+  const iv = encryptedData.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
+  const tag = encryptedData.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
+  const ciphertext = encryptedData.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
+
+  const key = deriveKey(passphrase, salt);
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+}

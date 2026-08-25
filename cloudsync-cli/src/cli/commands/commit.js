@@ -5,8 +5,8 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, createWriteStream } from 'fs';
-import { join, basename } from 'path';
-import { createHash, randomBytes } from 'crypto';
+import { join } from 'path';
+import { randomBytes } from 'crypto';
 import { ZipArchive } from 'archiver';
 import { logOperation } from '../../utils/logger.js';
 import { safeJsonParse } from '../../utils/security.js';
@@ -16,6 +16,8 @@ const commitCommand = new Command('commit')
   .description('💾 Commit staged changes with version tracking')
   .argument('[message]', 'Commit message')
   .option('--amend', 'Amend the last commit', false)
+  .option('-e, --encrypt', 'Encrypt snapshot archive on disk with AES-256-GCM', false)
+  .option('-p, --passphrase <secret>', 'Passphrase for AES-256-GCM encryption')
   .option('--no-verify', 'Skip pre-commit hooks', false)
   .option('--verbose', 'Show detailed commit info', false)
   .option('--dry-run', 'Preview without committing', false)
@@ -50,6 +52,7 @@ const commitCommand = new Command('commit')
       console.log(chalk.gray(`   Message: ${commitMessage}`));
       console.log(chalk.gray(`   Files: ${stagedFiles.length}`));
       console.log(chalk.gray(`   Amend: ${options.amend ? 'Yes' : 'No'}`));
+      console.log(chalk.gray(`   Encrypted: ${options.encrypt || options.passphrase ? 'Yes (AES-256-GCM)' : 'No'}`));
       stagedFiles.forEach(f => console.log(chalk.gray(`   + ${f}`)));
     }
 
@@ -64,19 +67,32 @@ const commitCommand = new Command('commit')
     const commitId = generateCommitId();
     const timestamp = new Date().toISOString();
 
+    // Create zip archive
+    const archivePath = join(historyDir, `${commitId}.zip`);
+    mkdirSync(historyDir, { recursive: true });
+    await createStagedArchive(stagingDir, stagedFiles, archivePath);
+
+    // Apply AES-256-GCM encryption if requested
+    let isEncrypted = false;
+    if (options.encrypt || options.passphrase) {
+      const passphrase = options.passphrase || process.env.CLOUDSYNC_KEY_PASSWORD || 'cloudsync-default';
+      const { encryptData } = await import('../../core/crypto/index.js');
+      const plaintext = readFileSync(archivePath);
+      const encrypted = encryptData(plaintext, passphrase);
+      writeFileSync(archivePath, encrypted);
+      isEncrypted = true;
+    }
+
     // Create commit object
     const commit = {
       id: commitId,
       message: commitMessage,
       timestamp,
-      author: { name: process.env.USER || 'user' },
       files: stagedFiles,
-      checksum: null
+      encrypted: isEncrypted,
+      author: process.env.USER || process.env.USERNAME || 'unknown'
     };
 
-    // Create archive of staged files
-    const archivePath = join(historyDir, `${commitId}.zip`);
-    await createStagedArchive(stagingDir, stagedFiles, archivePath);
 
     // Save commit metadata
     mkdirSync(historyDir, { recursive: true });

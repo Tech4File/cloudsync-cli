@@ -8,11 +8,11 @@
  */
 
 import { Client as SSHClient } from 'ssh2';
-import { createReadStream, createWriteStream, statSync, existsSync, readFileSync, mkdirSync } from 'fs';
+import { createWriteStream, statSync, existsSync, readFileSync, mkdirSync } from 'fs';
 import { join, basename } from 'path';
 import os from 'os';
 import { ZipArchive } from 'archiver';
-import { createHash, randomBytes } from 'crypto';
+import { createHash } from 'crypto';
 
 const PROTOCOLS = {
   ssh:    { speed:'medium', compression:'external',   resume:false, enc:true, best:'Simple transfers' },

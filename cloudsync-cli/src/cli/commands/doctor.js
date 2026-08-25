@@ -200,7 +200,7 @@ function checkSystemTools(verbose) {
 
   for (const tool of ['ssh', 'scp', 'rsync']) {
     try {
-      execSync(`${platform() === 'win32' ? 'where' : 'which'} ${tool}`, { stdio: 'pipe' });
+      execSync(`${platform() === 'win32' ? 'where' : 'which'} ${tool}`, { stdio: 'pipe', timeout: 1000 });
       tools.push(tool);
     } catch {
       missing.push(tool);

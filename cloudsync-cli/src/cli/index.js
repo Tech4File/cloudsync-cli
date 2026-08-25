@@ -5,11 +5,8 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import figlet from 'figlet';
-import { existsSync, writeFileSync, mkdirSync } from 'fs';
-import { join, resolve } from 'path';
-import { homedir } from 'os';
 import { VERSION } from '../version.mjs';
+import { showBanner } from '../utils/banner.js';
 
 const packageJson = { version: VERSION };
 
@@ -26,16 +23,6 @@ program
   .option('-c, --config <path>', 'Custom config file path')
   .option('--no-color', 'Disable colored output');
 
-// Banner
-function showBanner() {
-  const banner = figlet.textSync('CloudSync', { font: 'ANSI Shadow' });
-  console.log(chalk.cyan(banner));
-  console.log(chalk.gray('━'.repeat(60)));
-  console.log(chalk.white('  Secure • Fast • Open Source'));
-  console.log(chalk.gray('━'.repeat(60)));
-  console.log();
-}
-
 
 
 // Import command handlers
@@ -45,6 +32,8 @@ import downloadCommand from './commands/download.js';
 import syncCommand from './commands/sync.js';
 import portCommand from './commands/port.js';
 import shareCommand from './commands/share.js';
+import fetchCommand from './commands/fetch.js';
+import ignoreCommand from './commands/ignore.js';
 import historyCommand from './commands/history.js';
 import diffCommand from './commands/diff.js';
 import rollbackCommand from './commands/rollback.js';
@@ -56,6 +45,7 @@ import configCommand from './commands/config.js';
 import doctorCommand from './commands/doctor.js';
 import cloneCommand from './commands/clone.js';
 import logCommand from './commands/log.js';
+import { checkForUpdates } from '../utils/update-check.js';
 
 // Register all commands
 program.addCommand(initCommand);
@@ -64,6 +54,8 @@ program.addCommand(downloadCommand);
 program.addCommand(syncCommand);
 program.addCommand(portCommand);
 program.addCommand(shareCommand);
+program.addCommand(fetchCommand);
+program.addCommand(ignoreCommand);
 program.addCommand(historyCommand);
 program.addCommand(diffCommand);
 program.addCommand(rollbackCommand);
@@ -90,7 +82,7 @@ program
         console.log('Available topics: ' + program.commands.map(c => c.name()).join(', '));
       }
     } else {
-      showBanner();
+      showBanner(VERSION);
       program.help();
     }
   });
@@ -110,6 +102,8 @@ program.on('--help', () => {
   console.log('');
   console.log(chalk.cyan('💡 More Examples'));
   console.log(chalk.gray('━'.repeat(60)));
+  console.log('  cloudsync fetch http://192.168.1.5:8095/share/abc1234');
+  console.log('  cloudsync ignore --template node');
   console.log('  cloudsync upload --protocol rsync --include .env');
   console.log('  cloudsync sync --watch --interval 30');
   console.log('  cloudsync share . --expires 30');
@@ -124,10 +118,14 @@ program.on('--help', () => {
 // Parse arguments
 program.parse(process.argv);
 
-// Show banner on --help
 // Show banner when no args
 if (process.argv.length === 2) {
-  showBanner();
+  showBanner(VERSION);
+}
+
+// Asynchronous non-blocking background update check
+if (!process.env.CI && process.env.NODE_ENV !== 'test' && !process.argv.includes('-v') && !process.argv.includes('--version') && !process.argv.includes('-h') && !process.argv.includes('--help')) {
+  checkForUpdates(VERSION).catch(() => {});
 }
 
 // Export for testing

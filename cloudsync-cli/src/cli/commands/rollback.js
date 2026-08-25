@@ -4,7 +4,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { safeJsonParse } from '../../utils/security.js';
 
@@ -13,6 +13,7 @@ const rollbackCommand = new Command('rollback')
   .description('⏪ Revert to a previous version')
   .argument('<version>', 'Version ID to rollback to')
   .option('--file <path>', 'Specific file to rollback (default: all)')
+  .option('-p, --passphrase <secret>', 'Passphrase for AES-256-GCM encrypted snapshot')
   .option('--force', 'Skip confirmation', false)
   .option('--verbose', 'Show detailed rollback info', false)
   .action(async (versionId, options) => {
@@ -74,7 +75,8 @@ const rollbackCommand = new Command('rollback')
       try {
         const { VersionControl } = await import('../../core/vcs/index.js');
         const vcs = new VersionControl();
-        const result = vcs.extractArchive(archivePath, process.cwd(), options.file || null);
+        const passphrase = options.passphrase || process.env.CLOUDSYNC_KEY_PASSWORD || null;
+        const result = vcs.extractArchive(archivePath, process.cwd(), options.file || null, passphrase);
         if (result.extracted) {
           extractedCount = result.count || 0;
           if (verbose && result.files) {

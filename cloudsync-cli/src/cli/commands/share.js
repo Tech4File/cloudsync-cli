@@ -4,13 +4,12 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, writeFileSync, mkdirSync, createReadStream } from 'fs';
 import { join, basename } from 'path';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import http from 'http';
 import url from 'url';
-import { v4 as uuidv4 } from 'uuid';
-import { RateLimiter, safePath, isValidPort } from '../../utils/security.js';
+import { RateLimiter } from '../../utils/security.js';
 
 const shareCommand = new Command('share')
   .description('🔗 Generate shareable session links for file access')
@@ -36,7 +35,7 @@ const shareCommand = new Command('share')
 
     // Generate session token
     const sessionToken = generateSessionToken();
-    const shareId = uuidv4().slice(0, 8);
+    const shareId = randomUUID().slice(0, 8);
     
     console.log(chalk.cyan('\n🔗 CloudSync - Secure File Sharing'));
     console.log(chalk.gray('━'.repeat(50)));
@@ -174,6 +173,49 @@ async function startShareServer(session, options, verbose) {
       const html = generateSharePage(session, verbose);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(html);
+      return;
+    }
+
+    if (pathname.startsWith('/download/')) {
+      const shareId = pathname.split('/')[2];
+
+      if (shareId !== session.id) {
+        res.writeHead(404);
+        res.end('Share not found');
+        return;
+      }
+
+      // Check expiration
+      if (new Date() > new Date(session.expiresAt)) {
+        res.writeHead(410);
+        res.end('Share link expired');
+        server.close();
+        return;
+      }
+
+      // Check password if session is protected
+      if (session.password) {
+        const reqPwd = req.headers['x-share-password'] || parsedUrl.query.pwd;
+        const hashedReq = reqPwd ? createHash('sha256').update(String(reqPwd)).digest('hex') : null;
+        if (!hashedReq || hashedReq !== session.password) {
+          res.writeHead(401, { 'Content-Type': 'text/plain' });
+          res.end('401 Unauthorized: Valid password required');
+          return;
+        }
+      }
+
+      // Serve payload
+      const filename = basename(session.path);
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${filename}"`
+      });
+
+      if (existsSync(session.path)) {
+        createReadStream(session.path).pipe(res);
+      } else {
+        res.end('File data');
+      }
       return;
     }
 
