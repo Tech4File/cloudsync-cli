@@ -1,13 +1,8 @@
-/**
- * clone.js - Clone a remote workspace
- */
-
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-
-
+import { isValidHost, isValidUsername, sanitizeInput } from '../../utils/security.js';
 
 const cloneCommand = new Command('clone')
   .description('📥 Clone a remote workspace to local')
@@ -23,7 +18,17 @@ const cloneCommand = new Command('clone')
     const parsed = parseRemote(remote);
     
     if (!parsed) {
-      console.log(chalk.red('❌ Invalid remote format. Use: user@host:path'));
+      console.log(chalk.red('❌ Invalid remote format. Use: user@host:path or host:path'));
+      return;
+    }
+
+    if (!isValidHost(parsed.host)) {
+      console.log(chalk.red(`❌ Invalid remote host: "${parsed.host}"`));
+      return;
+    }
+
+    if (parsed.user && !isValidUsername(parsed.user)) {
+      console.log(chalk.red(`❌ Invalid username: "${parsed.user}"`));
       return;
     }
 

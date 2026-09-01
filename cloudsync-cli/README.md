@@ -40,7 +40,37 @@
 
 ### Our Solution
 
-CloudSync-CLI brings **Git-like version control** to sensitive configuration files and environment data, with **enterprise-grade security** and **multiple transport options** that Git simply wasn't designed for.
+CloudSync-CLI brings **Git-like version control** to sensitive configuration files, environment data, and arbitrary payloads with **enterprise-grade security** and **multiple transport options** that Git simply wasn't designed for.
+
+---
+
+## 🌐 Universal Deployment: Where & When to Use CloudSync-CLI
+
+CloudSync-CLI is built for **anywhere-to-anywhere synchronization** across trusted and untrusted environments without credential leakage:
+
+```text
+┌─────────────────────────┐       Encrypted Tunnel / P2P       ┌─────────────────────────┐
+│   AI Agent Sandboxes    │ ◄────────────────────────────────► │     Local Workstation   │
+│ (Docker, VM, WebVM, CI) │      (Password Authenticated)      │ (macOS, Windows, Linux) │
+└────────────┬────────────┘                                    └────────────┬────────────┘
+             │                                                              │
+             │           AES-256-GCM Encrypted Snapshots                    │
+             ▼                                                              ▼
+┌─────────────────────────┐       Pure SSH2 Multi-Stream       ┌─────────────────────────┐
+│  Remote Cloud Servers   │ ◄────────────────────────────────► │ Air-Gapped Infrastruct. │
+│ (AWS, GCP, Azure, VPS)  │          (Zero-Tracking)           │   (On-Premises Nodes)   │
+└─────────────────────────┘                                    └─────────────────────────┘
+```
+
+### 🎯 Primary Use-Case Scenarios
+
+| Environment & Use-Case | Scenario & Threat Model | How CloudSync-CLI Protects You |
+|---|---|---|
+| 🤖 **Untrusted AI Agent Sandboxes** | Transferring code, logs, and artifacts to/from ephemeral AI agent sandboxes (Docker, VM, E2B, Modal) where you **cannot risk storing permanent SSH private keys or cloud credentials**. | Use ephemeral **`cloudsync share`** and **`cloudsync fetch`** with user-defined session passwords. The sandbox only receives an encrypted, time-limited tunnel with zero exposure of your permanent cloud credentials. |
+| ☁️ **Cloud Server & VPS Sync** | Synchronizing `.env`, microservice certs, and database configs between staging and production VPS instances (AWS, GCP, DigitalOcean). | Direct **pure SSH2 encrypted tunnels** with memory-only stream transfers. No sensitive configuration data ever touches third-party public Git repositories. |
+| 🛡️ **Air-Gapped & High-Security Nodes** | Maintaining version history on machines with restricted or no internet access. | Native **AES-256-GCM encrypted local history snapshots** with Scrypt key derivation. Staged changes are stored as encrypted blobs on disk requiring `--passphrase` to unpack. |
+| ⚡ **CI/CD Build Pipelines & Runners** | Transferring large pre-built binaries or dependency caches between distributed CI runners without vendor lock-in. | Multi-stream parallel concurrency (**`-j, --concurrency`**) with streaming 64KB chunk SHA-256 integrity verification. |
+| 👥 **Peer-to-Peer Developer Handoff** | Sharing database dumps, debug logs, or staging configs directly between team members behind NATs or firewalls. | Ephemeral HTTP sharing with rate limiting (60 req/min), CORS protection, security headers, and SHA-256 password authentication. |
 
 ---
 
@@ -625,7 +655,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [Commander.js](https://www.npmjs.com/package/commander) - CLI framework
 - [ssh2](https://www.npmjs.com/package/ssh2) - SSH client
 - [Archiver](https://www.npmjs.com/package/archiver) - ZIP compression
-- [diff-match-patch](https://www.npmjs.com/package/diff-match-patch) - Text diffing
+- [Chalk](https://www.npmjs.com/package/chalk) - Terminal styling
 
 ---
 

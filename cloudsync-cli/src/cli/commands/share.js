@@ -169,6 +169,17 @@ async function startShareServer(session, options, verbose) {
         return;
       }
 
+      // Check password if session is protected
+      if (session.password) {
+        const reqPwd = req.headers['x-share-password'] || parsedUrl.query.pwd;
+        const hashedReq = reqPwd ? createHash('sha256').update(String(reqPwd)).digest('hex') : null;
+        if (!hashedReq || hashedReq !== session.password) {
+          res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>\uD83D\uDD12 Password Required</h2><p>This share session is password-protected. Add <code>?pwd=YOUR_PASSWORD</code> to the URL.</p></body></html>');
+          return;
+        }
+      }
+
       // Serve share page
       const html = generateSharePage(session, verbose);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -230,18 +241,28 @@ async function startShareServer(session, options, verbose) {
 
   return new Promise((resolve) => {
     server.listen(options.port, () => {
-      console.log(chalk.cyan('\n🚀 Sharing server running!'));
+      console.log(chalk.cyan('\n\uD83D\uDE80 Sharing server running!'));
       
       if (verbose) {
-        console.log(chalk.gray('\n📊 Connection Status:'));
+        console.log(chalk.gray('\n\uD83D\uDCCA Connection Status:'));
         console.log(chalk.gray(`   Access count: ${session.accessCount}`));
         console.log(chalk.gray(`   Session ID: ${session.id}`));
       }
 
-      console.log(chalk.cyan('\n👀 Press Ctrl+C to stop sharing...\n'));
+      // Fix #9: Auto-expiry timer — shut down server when session expires
+      const ttl = new Date(session.expiresAt) - Date.now();
+      if (ttl > 0) {
+        setTimeout(() => {
+          console.log(chalk.yellow('\n\u23F0 Share session expired. Server shutting down.'));
+          server.close();
+          process.exit(0);
+        }, ttl);
+      }
+
+      console.log(chalk.cyan('\n\uD83D\uDC40 Press Ctrl+C to stop sharing...\n'));
 
       process.on('SIGINT', () => {
-        console.log(chalk.yellow('\n\n🔒 Stopping share server...'));
+        console.log(chalk.yellow('\n\n\uD83D\uDD12 Stopping share server...'));
         server.close();
         process.exit(0);
       });

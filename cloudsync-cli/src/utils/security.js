@@ -5,7 +5,7 @@
  * secure file operations, and content security validation.
  */
 
-import { resolve, normalize } from 'path';
+import { resolve, normalize, sep } from 'path';
 import { existsSync, statSync } from 'fs';
 
 /**
@@ -46,6 +46,8 @@ function sanitizeObject(obj) {
 
 /**
  * Validate and sanitize a file path to prevent path traversal attacks
+ * Supports POSIX and Windows filesystem boundaries cleanly.
+ * 
  * @param {string} inputPath - User-provided path
  * @param {string} baseDir - Allowed base directory
  * @returns {{ safe: boolean, resolved: string, error?: string }}
@@ -65,8 +67,13 @@ export function safePath(inputPath, baseDir = process.cwd()) {
     const resolvedPath = resolve(resolvedBase, inputPath);
     const normalizedPath = normalize(resolvedPath);
 
-    // Ensure the resolved path is within the base directory
-    if (!normalizedPath.startsWith(resolvedBase)) {
+    const isWindows = process.platform === 'win32';
+    const checkBase = isWindows ? resolvedBase.toLowerCase() : resolvedBase;
+    const checkPath = isWindows ? normalizedPath.toLowerCase() : normalizedPath;
+
+    // Ensure the resolved path is within the base directory or exactly matches base directory
+    const basePrefix = checkBase.endsWith(sep) ? checkBase : checkBase + sep;
+    if (!checkPath.startsWith(basePrefix) && checkPath !== checkBase) {
       return { safe: false, resolved: normalizedPath, error: 'Path traversal detected' };
     }
 
@@ -74,6 +81,23 @@ export function safePath(inputPath, baseDir = process.cwd()) {
   } catch (e) {
     return { safe: false, resolved: '', error: e.message };
   }
+}
+
+/**
+ * Validate that a filename is safe (no path traversal characters or reserved device names)
+ * @param {string} filename 
+ * @returns {boolean}
+ */
+export function isSafeFilename(filename) {
+  if (!filename || typeof filename !== 'string') return false;
+  if (filename.includes('/') || filename.includes('\\') || filename.includes('\0')) return false;
+  if (filename === '.' || filename === '..') return false;
+  
+  // Windows reserved device names
+  const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+  if (reserved.test(filename)) return false;
+
+  return true;
 }
 
 /**
@@ -100,6 +124,7 @@ export function sanitizeInput(input, maxLength = 1024) {
  */
 export function isValidHost(host) {
   if (!host || typeof host !== 'string') return false;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') return true;
   // Allow domains and IPs, reject anything with special characters
   const hostRegex = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
   return hostRegex.test(host) && host.length <= 253;
@@ -150,13 +175,14 @@ export function validateFileSize(filePath, maxSizeMB = 500) {
 }
 
 /**
- * Rate limiter for share server endpoints
+ * Rate limiter for share server endpoints with auto-cleanup
  */
 export class RateLimiter {
   constructor(maxRequests = 60, windowMs = 60000) {
     this.maxRequests = maxRequests;
     this.windowMs = windowMs;
     this.requests = new Map();
+    this.calls = 0;
   }
 
   /**
@@ -167,6 +193,11 @@ export class RateLimiter {
   isAllowed(ip) {
     const now = Date.now();
     const windowStart = now - this.windowMs;
+
+    // Periodic automatic cleanup every 100 requests to prevent memory leakage
+    if (++this.calls % 100 === 0) {
+      this.cleanup();
+    }
 
     if (!this.requests.has(ip)) {
       this.requests.set(ip, []);
@@ -223,6 +254,7 @@ export function sanitizeEnvName(name) {
 export default {
   safeJsonParse,
   safePath,
+  isSafeFilename,
   sanitizeInput,
   isValidHost,
   isValidPort,

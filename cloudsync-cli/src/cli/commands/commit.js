@@ -75,11 +75,15 @@ const commitCommand = new Command('commit')
     // Apply AES-256-GCM encryption if requested
     let isEncrypted = false;
     if (options.encrypt || options.passphrase) {
-      const passphrase = options.passphrase || process.env.CLOUDSYNC_KEY_PASSWORD || 'cloudsync-default';
-      const { encryptData } = await import('../../core/crypto/index.js');
-      const plaintext = readFileSync(archivePath);
-      const encrypted = encryptData(plaintext, passphrase);
-      writeFileSync(archivePath, encrypted);
+      const passphrase = options.passphrase || process.env.CLOUDSYNC_KEY_PASSWORD;
+      if (!passphrase) {
+        console.log(chalk.red('❌ Encryption requires a passphrase.'));
+        console.log(chalk.gray('   Use: cloudsync commit --encrypt --passphrase <secret>'));
+        console.log(chalk.gray('   Or set CLOUDSYNC_KEY_PASSWORD environment variable'));
+        return;
+      }
+      const { encryptFile } = await import('../../core/crypto/index.js');
+      await encryptFile(archivePath, passphrase);
       isEncrypted = true;
     }
 

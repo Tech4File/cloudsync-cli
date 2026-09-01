@@ -1,13 +1,8 @@
-/**
- * port.js - SSH tunnel/port forwarding management
- */
-
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { safeJsonParse } from '../../utils/security.js';
-
+import { safeJsonParse, isValidPort, isValidHost } from '../../utils/security.js';
 
 const portCommand = new Command('port')
   .description('🔌 Create SSH tunnel/port forwarding')
@@ -26,10 +21,22 @@ const portCommand = new Command('port')
     }
 
     // Parse port mapping
-    const [localPort, remotePort] = mapping.split(':').map(p => parseInt(p, 10));
+    const parts = mapping.split(':');
+    if (parts.length !== 2) {
+      console.log(chalk.red('❌ Invalid port mapping format. Use: local:remote (e.g., 3000:3000)'));
+      return;
+    }
+
+    const localPort = parseInt(parts[0], 10);
+    const remotePort = parseInt(parts[1], 10);
     
-    if (isNaN(localPort) || isNaN(remotePort)) {
-      console.log(chalk.red('❌ Invalid port mapping. Use format: local:remote (e.g., 3000:3000)'));
+    if (!isValidPort(localPort) || !isValidPort(remotePort)) {
+      console.log(chalk.red(`❌ Invalid port numbers: "${parts[0]}:${parts[1]}" (ports must be integers 1-65535)`));
+      return;
+    }
+
+    if (options.host && !isValidHost(options.host)) {
+      console.log(chalk.red(`❌ Invalid bind host: "${options.host}"`));
       return;
     }
 

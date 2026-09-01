@@ -99,7 +99,7 @@ const fetchCommand = new Command('fetch')
       }
 
       const outFile = join(outDir, `shared_${shareId}.zip`);
-      writeFileSync(outFile, Buffer.from(downloadRes.body, 'binary'));
+      writeFileSync(outFile, downloadRes.rawBuffer);
 
       console.log(chalk.green(`\n✅ Download complete!`));
       console.log(chalk.white(`   Saved: ${chalk.cyan(outFile)}`));
@@ -144,7 +144,8 @@ function httpGet(targetUrl, timeout = 10000, customHeaders = {}, showProgress = 
         resolve({
           statusCode: res.statusCode,
           headers: res.headers,
-          body: buffer.toString('binary')
+          body: buffer.toString('utf8'),
+          rawBuffer: buffer
         });
       });
     });

@@ -8,7 +8,7 @@
  */
 
 import { Client as SSHClient } from 'ssh2';
-import { createWriteStream, statSync, existsSync, readFileSync, mkdirSync } from 'fs';
+import { createWriteStream, createReadStream, statSync, existsSync, readFileSync, mkdirSync } from 'fs';
 import { join, basename } from 'path';
 import os from 'os';
 import { ZipArchive } from 'archiver';
@@ -126,24 +126,25 @@ class TransportEngine {
   }
 
   async uploadRSYNC(files, remotePath, profile) {
-    this.log('RSYNC delta: block-level diff, only changed data transferred');
+    this.log('[PLANNED] RSYNC delta: block-level diff, only changed data transferred');
     const totalSize = files.reduce((s,f)=>{try{return s+statSync(f).size}catch(e){return s}},0);
     return { protocol:'rsync', method:'delta-blocks', compression:'built-in-lz4', resume:true,
       totalSize, fileCount: files.length, algorithm:'rolling-checksum-adler32',
-      note:'Actual delta savings depend on remote state comparison' };
+      implemented: false, note:'RSYNC protocol is planned — use ssh or hybrid for now' };
   }
 
   async uploadWS(files, remotePath, profile) {
-    this.log('WebSocket streaming - real-time bidirectional, works through HTTP proxies');
+    this.log('[PLANNED] WebSocket streaming - real-time bidirectional');
     return { protocol:'websocket', method:'message-stream', compression:'per-message-deflate',
-      resume:true, realTime:true, bidirectional:true,
-      useCase:'Headless and restricted environments without SSH' };
+      resume:true, realTime:true, bidirectional:true, implemented: false,
+      note:'WebSocket protocol is planned — use ssh or hybrid for now' };
   }
 
   async uploadPipe(files, remotePath, profile) {
-    this.log('DIRECT PIPE - raw SSH tunnel, no protocol overhead');
+    this.log('[PLANNED] DIRECT PIPE - raw SSH tunnel, no protocol overhead');
     return { protocol:'pipe', method:'direct-tar-stream', compression:'gzip-stream',
-      resume:false, throughput:'maximum', overhead:'minimal' };
+      resume:false, throughput:'maximum', overhead:'minimal', implemented: false,
+      note:'Direct pipe is planned — use ssh or hybrid for now' };
   }
 
   async uploadHybrid(files, remotePath, profile) {
@@ -165,43 +166,44 @@ class TransportEngine {
   async uploadChunked(files, remotePath, profile) {
     const totalSize = files.reduce((s,f)=>{try{return s+statSync(f).size}catch(e){return s}},0);
     const numChunks = Math.ceil(totalSize / this.chunkSize);
-    this.log(`CHUNKED: ${totalSize}B in ${numChunks} chunks of ${this.chunkSize/1024/1024}MB`);
+    this.log(`[PLANNED] CHUNKED: ${totalSize}B in ${numChunks} chunks of ${this.chunkSize/1024/1024}MB`);
     return { protocol:'chunked', method:'multi-part-stream', chunkSize:this.chunkSize,
-      totalChunks:numChunks, totalSize, resume:true, checksumPerChunk:true };
+      totalChunks:numChunks, totalSize, resume:true, checksumPerChunk:true, implemented: false,
+      note:'Chunked protocol is planned — use ssh or hybrid for now' };
   }
 
   async uploadHTTP(files, remotePath, profile) {
-    this.log('HTTP POST - cloud platform API integration');
+    this.log('[PLANNED] HTTP POST - cloud platform API integration');
     return { protocol:'http', method:'multipart-post', compression:'gzip-content-encoding',
-      resume:false, authMethod:'token-or-basic', useCase:'Cloud platforms without SSH',
-      endpoints:{ generic:'POST {platform_url}/files', github:'https://api.github.com/repos/{owner}/{repo}/contents/{path}' } };
+      resume:false, authMethod:'token-or-basic', implemented: false,
+      note:'HTTP upload is planned — use ssh or hybrid for now' };
   }
 
   // ===== DOWNLOAD METHODS =====
 
   async downloadSCP(remotePath, localPath, profile) {
-    this.log('SCP download');
-    return { protocol:'scp', direction:'download', simulated:true };
+    this.log('[PLANNED] SCP download');
+    return { protocol:'scp', direction:'download', implemented: false };
   }
   async downloadSFTP(remotePath, localPath, profile) {
-    this.log('SFTP download with resume');
-    return { protocol:'sftp', direction:'download', resume:true, simulated:true };
+    this.log('[PLANNED] SFTP download with resume');
+    return { protocol:'sftp', direction:'download', resume:true, implemented: false };
   }
   async downloadRSYNC(remotePath, localPath, profile) {
-    this.log('RSYNC delta download');
-    return { protocol:'rsync', direction:'download', delta:true, simulated:true };
+    this.log('[PLANNED] RSYNC delta download');
+    return { protocol:'rsync', direction:'download', delta:true, implemented: false };
   }
   async downloadWS(remotePath, localPath, profile) {
-    this.log('WebSocket download stream');
-    return { protocol:'websocket', direction:'download', streaming:true, simulated:true };
+    this.log('[PLANNED] WebSocket download stream');
+    return { protocol:'websocket', direction:'download', streaming:true, implemented: false };
   }
   async downloadPipe(remotePath, localPath, profile) {
-    this.log('Direct pipe download');
-    return { protocol:'pipe', direction:'download', simulated:true };
+    this.log('[PLANNED] Direct pipe download');
+    return { protocol:'pipe', direction:'download', implemented: false };
   }
   async downloadChunked(remotePath, localPath, profile) {
-    this.log('Chunked download with resume');
-    return { protocol:'chunked', direction:'download', resume:true, simulated:true };
+    this.log('[PLANNED] Chunked download with resume');
+    return { protocol:'chunked', direction:'download', resume:true, implemented: false };
   }
 
   // ===== HELPERS =====
@@ -237,8 +239,18 @@ class TransportEngine {
   }
 
   generateChecksum(filePath) {
-    try { return createHash('sha256').update(readFileSync(filePath)).digest('hex'); }
-    catch(e) { return null; }
+    return new Promise((resolve) => {
+      try {
+        if (!existsSync(filePath)) return resolve(null);
+        const hash = createHash('sha256');
+        const stream = createReadStream(filePath);
+        stream.on('data', chunk => hash.update(chunk));
+        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('error', () => resolve(null));
+      } catch (e) {
+        resolve(null);
+      }
+    });
   }
 
   getStats() {

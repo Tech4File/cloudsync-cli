@@ -2,14 +2,14 @@
  * Version Control System - Git-like operations for CloudSync
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, cpSync, createWriteStream, statSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, cpSync, createWriteStream, createReadStream, statSync } from 'fs';
 import { join, relative, basename } from 'path';
 import { createHash, randomBytes } from 'crypto';
 import { ZipArchive } from 'archiver';
 import os from 'os';
 import { inflateRawSync } from 'zlib';
-import { safeJsonParse } from '../../utils/security.js';
-import { encryptData, decryptData } from '../crypto/index.js';
+import { safeJsonParse, safePath } from '../../utils/security.js';
+import { encryptFile, decryptData } from '../crypto/index.js';
 
 class VersionControl {
   constructor(options = {}) {
@@ -68,21 +68,19 @@ class VersionControl {
     return readdirSync(this.stagingDir).filter(f => !f.startsWith('.') && f !== 'index.json');
   }
 
-  commit(message, author = null, passphrase = null) {
+  async commit(message, author = null, passphrase = null) {
     const stagedFiles = this.getStagedFiles();
     if (stagedFiles.length === 0) throw new Error('Nothing to commit - staging area is empty');
     const commitId = this.generateCommitId();
     const timestamp = new Date().toISOString();
     const archivePath = join(this.historyDir, 'commits', commitId + '.zip');
-    this.createStagedArchive(archivePath);
-    const checksum = this.calculateArchiveChecksum(archivePath);
+    await this.createStagedArchive(archivePath);
+    const checksum = await this.calculateArchiveChecksum(archivePath);
 
     // If passphrase provided, encrypt the archive on disk with AES-256-GCM
     let isEncrypted = false;
     if (passphrase) {
-      const plaintext = readFileSync(archivePath);
-      const encrypted = encryptData(plaintext, passphrase);
-      writeFileSync(archivePath, encrypted);
+      await encryptFile(archivePath, passphrase);
       isEncrypted = true;
     }
 
@@ -202,18 +200,13 @@ class VersionControl {
   }
 
   calculateArchiveChecksum(archivePath) {
-    try {
+    return new Promise((resolve) => {
       const hash = createHash('sha256');
-      const data = readFileSync(archivePath);
-      // For large buffers (>10MB), update in 64KB chunks to maintain stream cache alignment
-      const CHUNK_SIZE = 64 * 1024;
-      for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-        hash.update(data.subarray(i, Math.min(i + CHUNK_SIZE, data.length)));
-      }
-      return hash.digest('hex');
-    } catch (e) {
-      return '';
-    }
+      const stream = createReadStream(archivePath);
+      stream.on('data', chunk => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+      stream.on('error', () => resolve(''));
+    });
   }
 
   getDefaultAuthor() {
@@ -286,8 +279,16 @@ class VersionControl {
         const compressedData = data.subarray(dataStart, dataEnd);
 
         // Skip directories and filter by specificFile if provided
-        if (!fileName.endsWith('/')) {
-          if (!specificFile || fileName === specificFile || basename(fileName) === specificFile) {
+        const cleanName = fileName.replace(/\\/g, '/').replace(/^\/+/, '');
+        if (!cleanName.endsWith('/')) {
+          if (!specificFile || cleanName === specificFile || basename(cleanName) === specificFile || fileName === specificFile) {
+            // Check for Zip-Slip path traversal vulnerability
+            const pathCheck = safePath(cleanName, targetDir);
+            if (!pathCheck.safe) {
+              offset = dataEnd + descriptorLen;
+              continue;
+            }
+
             let fileData;
             if (compressionMethod === 0) {
               fileData = compressedData;
@@ -298,11 +299,14 @@ class VersionControl {
               continue;
             }
 
-            const outPath = join(targetDir, fileName);
-            const outDir = join(targetDir, fileName.split('/').slice(0, -1).join('/'));
-            if (outDir && !existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+            const outPath = pathCheck.resolved;
+            const dirParts = cleanName.split('/').slice(0, -1);
+            if (dirParts.length > 0) {
+              const outDir = join(targetDir, dirParts.join('/'));
+              if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+            }
             writeFileSync(outPath, fileData);
-            extracted.push(fileName);
+            extracted.push(cleanName);
           }
         }
 

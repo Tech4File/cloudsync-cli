@@ -77,7 +77,17 @@ cloudsync fetch http://192.168.1.5:8095/share/abc1234 --password mysecret
 cloudsync doctor
 ```
 
-Full documentation & CLI command reference: [cloudsync-cli/README.md](cloudsync-cli/README.md)
+## 🌐 Universal Deployment: Where & When to Use
+
+CloudSync-CLI enables **anywhere-to-anywhere synchronization** across trusted and untrusted environments without compromising credentials:
+
+| Environment & Use-Case | Scenario & Threat Model | How CloudSync-CLI Protects You |
+|---|---|---|
+| 🤖 **Untrusted AI Agent Sandboxes** | Transferring code, logs, and datasets to/from ephemeral AI agent sandboxes (Docker, VM, E2B, Modal) where you **cannot risk storing permanent SSH private keys or cloud credentials**. | Use ephemeral **`cloudsync share`** and **`cloudsync fetch`** with user-defined passwords. The sandbox connects over an encrypted, time-limited tunnel with zero exposure of your permanent credentials. |
+| ☁️ **Cloud Server & VPS Sync** | Synchronizing `.env`, microservice certificates, and database configs between staging and production VPS instances (AWS, GCP, DigitalOcean). | Direct **pure SSH2 encrypted tunnels** with memory-only stream transfers. No sensitive configuration data ever touches third-party public Git repositories. |
+| 🛡️ **Air-Gapped & High-Security Nodes** | Maintaining version history on machines with restricted or no internet access. | Native **AES-256-GCM encrypted local history snapshots** with Scrypt key derivation. Staged changes are stored as encrypted blobs on disk requiring `--passphrase` to unpack. |
+| ⚡ **CI/CD Build Pipelines & Runners** | Transferring large pre-built binaries or caches between distributed CI workers without vendor lock-in. | Multi-stream parallel concurrency (**`-j, --concurrency`**) with streaming 64KB chunk SHA-256 integrity verification. |
+| 👥 **Peer-to-Peer Developer Handoff** | Sharing database dumps, debug logs, or staging configs directly between team members behind NATs or firewalls. | Ephemeral HTTP sharing with rate limiting (60 req/min), CORS protection, security headers, and SHA-256 password authentication. |
 
 ---
 

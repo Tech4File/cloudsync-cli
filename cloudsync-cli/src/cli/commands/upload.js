@@ -4,7 +4,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { readFileSync, existsSync, readdirSync, createWriteStream, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, existsSync, readdirSync, createWriteStream, createReadStream, writeFileSync, mkdirSync } from 'fs';
 import { join, relative } from 'path';
 import { homedir } from 'os';
 import { ZipArchive } from 'archiver';
@@ -90,6 +90,15 @@ const uploadCommand = new Command('upload')
     
     if (verbose) console.log(chalk.gray(`\n📝 Version ID: ${versionId}`));
     
+    // Compute streaming SHA-256 checksum (prevents OOM on large archives)
+    const checksum = await new Promise((resolve) => {
+      const hash = crypto.createHash('sha256');
+      const stream = createReadStream(archivePath);
+      stream.on('data', chunk => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+      stream.on('error', () => resolve(''));
+    });
+
     // Save to history
     const historyEntry = {
       id: versionId,
@@ -98,7 +107,7 @@ const uploadCommand = new Command('upload')
       files: filesToUpload.map(f => relative(workspace, f)),
       timestamp: new Date().toISOString(),
       protocol: options.protocol,
-      checksum: crypto.createHash('sha256').update(readFileSync(archivePath)).digest('hex')
+      checksum
     };
     
     saveHistory(historyEntry, verbose);
@@ -227,6 +236,9 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
   const port = profile.port || 22;
   const username = profile.user;
   const keyPath = profile.key || join(homedir(), '.ssh', 'id_rsa');
+  const remotePath = profile.path || '~/.cloudsync/uploads';
+  const { basename: bn } = await import('path');
+  const remoteFile = `${remotePath}/${bn(archivePath)}`;
 
   if (verbose) {
     console.log(chalk.gray(`\n🔌 Connecting to ${username}@${host}:${port}`));
@@ -236,36 +248,62 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
     const conn = new SSHClient();
     
     conn.on('ready', () => {
-      if (verbose) console.log(chalk.gray('Connected to SSH server'));
+      if (verbose) console.log(chalk.gray('   Connected to SSH server'));
       
-      // Execute remote commands via exec
-      conn.exec('mkdir -p ~/.cloudsync/uploads && cd ~/.cloudsync/uploads && pwd', (err, stream) => {
+      // Step 1: Create remote directory
+      conn.exec(`mkdir -p ${remotePath}`, (err, stream) => {
         if (err) {
           conn.end();
-          return reject(err);
+          return reject(new Error(`Remote mkdir failed: ${err.message}`));
         }
-        
+
         stream.on('close', () => {
-          conn.end();
-          resolve();
+          // Step 2: Open SFTP channel and transfer the archive
+          conn.sftp((sftpErr, sftp) => {
+            if (sftpErr) {
+              conn.end();
+              return reject(new Error(`SFTP channel failed: ${sftpErr.message}`));
+            }
+
+            if (verbose) console.log(chalk.gray(`   SFTP channel open, uploading to ${remoteFile}`));
+
+            const readStream = createReadStream(archivePath);
+            const writeStream = sftp.createWriteStream(remoteFile);
+
+            let transferred = 0;
+            readStream.on('data', (chunk) => {
+              transferred += chunk.length;
+              if (verbose && transferred % (5 * 1024 * 1024) < chunk.length) {
+                console.log(chalk.gray(`   📤 ${(transferred / (1024 * 1024)).toFixed(1)} MB transferred`));
+              }
+            });
+
+            writeStream.on('close', () => {
+              if (verbose) console.log(chalk.green(`   ✅ Transfer complete: ${(transferred / 1024).toFixed(1)} KB`));
+              conn.end();
+              resolve();
+            });
+
+            writeStream.on('error', (e) => {
+              conn.end();
+              reject(new Error(`SFTP write failed: ${e.message}`));
+            });
+
+            readStream.pipe(writeStream);
+          });
         });
-        
-        stream.on('data', (data) => {
-          if (verbose) console.log(chalk.gray(`Remote: ${data}`));
-        });
-        
+
         stream.stderr.on('data', (data) => {
-          if (verbose) console.log(chalk.red(`Remote Error: ${data}`));
+          if (verbose) console.log(chalk.red(`   Remote Error: ${data}`));
         });
       });
     });
 
     conn.on('error', (err) => {
-      if (verbose) console.log(chalk.red(`SSH Error: ${err.message}`));
-      // Simulate success for demo purposes when SSH isn't available
-      console.log(chalk.yellow('\n⚠️ SSH connection not available (demo mode)'));
-      console.log(chalk.gray('   In production, files would be transferred via:'));
-      console.log(chalk.cyan(`   scp "${archivePath}" ${username}@${host}:~/.cloudsync/uploads/`));
+      if (verbose) console.log(chalk.gray(`   SSH unavailable: ${err.message}`));
+      console.log(chalk.yellow('\n⚠️  SSH connection not available — archive saved locally'));
+      console.log(chalk.gray('   To transfer manually, run:'));
+      console.log(chalk.cyan(`   scp "${archivePath}" ${username}@${host}:${remotePath}/`));
       resolve();
     });
 
@@ -277,10 +315,13 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
         port,
         username,
         privateKey,
-        readyTimeout: 30000
+        readyTimeout: 30000,
+        keepaliveInterval: 10000
       });
     } catch (e) {
-      console.log(chalk.yellow('\n⚠️ SSH key not found, running in simulation mode'));
+      console.log(chalk.yellow('\n⚠️  SSH key not found — archive saved locally'));
+      console.log(chalk.gray('   To transfer manually, run:'));
+      console.log(chalk.cyan(`   scp "${archivePath}" ${username}@${host}:${remotePath}/`));
       resolve();
     }
   });

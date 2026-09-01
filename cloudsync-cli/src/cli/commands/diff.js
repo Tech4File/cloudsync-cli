@@ -26,13 +26,20 @@ const diffCommand = new Command('diff')
 
     const history = safeJsonParse(readFileSync(indexFile, 'utf8'), []);
     
-    // Default to last 2 versions
+    // Default to last 2 versions or compare 1 version with its predecessor
     if (versions.length === 0) {
       versions = [history[1]?.id, history[0]?.id].filter(Boolean);
+    } else if (versions.length === 1) {
+      const idx = history.findIndex(h => h.id === versions[0]);
+      if (idx >= 0 && history[idx + 1]) {
+        versions = [history[idx + 1].id, versions[0]];
+      } else if (history[0] && history[0].id !== versions[0]) {
+        versions = [versions[0], history[0].id];
+      }
     }
 
     if (versions.length < 2) {
-      console.log(chalk.yellow('⚠️ Need at least 2 versions to compare'));
+      console.log(chalk.yellow('⚠️ Need at least 2 versions to compare. Make more commits with `cloudsync commit`'));
       return;
     }
 

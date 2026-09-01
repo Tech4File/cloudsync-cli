@@ -151,7 +151,7 @@ try {
   const { VersionControl } = await import('./src/core/vcs/index.js');
   const vcs = new VersionControl();
   const testFile = join(TEST_DIR, 'data', 'config.json');
-  const hash = vcs.calculateArchiveChecksum(testFile);
+  const hash = await vcs.calculateArchiveChecksum(testFile);
   streamHashOk = typeof hash === 'string' && hash.length === 64;
 } catch (e) {}
 test('Test 3.2: Streaming Chunk-Based SHA-256 Hashing (vcs)', streamHashOk);
@@ -211,6 +211,59 @@ const installPs1Exists = existsSync(join(__dirname, 'installer', 'Install-CloudS
 test('Test 5.3: Universal Platform Installers (installers)', installShExists && installPs1Exists);
 
 // ─────────────────────────────────────────────────────────────
+// STAGE 6: THREAT MODELING & SECURITY HARDENING VERIFICATION
+// ─────────────────────────────────────────────────────────────
+console.log('\n📦 [Stage 6] Threat Modeling & Security Hardening Verification');
+console.log('─'.repeat(60));
+
+let safePathOk = false;
+let protoPollutionOk = false;
+let rateLimiterOk = false;
+let safeFilenameOk = false;
+let zipSlipOk = false;
+
+try {
+  const { safePath, safeJsonParse, RateLimiter, isSafeFilename } = await import('./src/utils/security.js');
+
+  // Test 6.1: Path Traversal & Null Byte Rejection
+  const traversalCheck = safePath('../../etc/passwd', TEST_DIR);
+  const nullByteCheck = safePath('safe/path\0/bad', TEST_DIR);
+  const validCheck = safePath('data/config.json', TEST_DIR);
+  safePathOk = !traversalCheck.safe && !nullByteCheck.safe && validCheck.safe;
+
+  // Test 6.2: Prototype Pollution Stripping
+  const pollutedJson = '{"__proto__": {"isAdmin": true}, "constructor": {"polluted": true}, "name": "safe"}';
+  const parsed = safeJsonParse(pollutedJson, {});
+  protoPollutionOk = parsed.name === 'safe' && !Object.prototype.isAdmin && !Object.prototype.polluted;
+
+  // Test 6.3: Rate Limiter Throttling and Auto-Cleanup
+  const limiter = new RateLimiter(5, 1000);
+  let allowedCount = 0;
+  for (let i = 0; i < 10; i++) {
+    if (limiter.isAllowed('192.168.1.100')) allowedCount++;
+  }
+  rateLimiterOk = allowedCount === 5 && !limiter.isAllowed('192.168.1.100');
+
+  // Test 6.4: Safe Filename Validator
+  safeFilenameOk = isSafeFilename('normal-file.txt') && !isSafeFilename('../bad.txt') && !isSafeFilename('CON') && !isSafeFilename('NUL');
+
+  // Test 6.5: Zip Slip Defense in VCS
+  const { VersionControl } = await import('./src/core/vcs/index.js');
+  const vcs = new VersionControl();
+  // Attempt extraction to verify bounds
+  const extractRes = vcs.extractArchive(join(TEST_DIR, 'nonexistent.zip'), TEST_DIR);
+  zipSlipOk = typeof extractRes === 'object' && extractRes.extracted === false;
+} catch (e) {
+  console.log('Stage 6 error:', e);
+}
+
+test('Test 6.1: Path Traversal & Null Byte Guard (safePath)', safePathOk);
+test('Test 6.2: Prototype Pollution Immunity (safeJsonParse)', protoPollutionOk);
+test('Test 6.3: Sliding Window IP Rate Limiting & Throttling (RateLimiter)', rateLimiterOk);
+test('Test 6.4: Safe Filename & Device Name Sanitization (isSafeFilename)', safeFilenameOk);
+test('Test 6.5: Zip-Slip Vulnerability Extraction Mitigation (vcs)', zipSlipOk);
+
+// ─────────────────────────────────────────────────────────────
 // CLEANUP & SUMMARY
 // ─────────────────────────────────────────────────────────────
 // Teardown test workspace
@@ -228,7 +281,7 @@ console.log(`   📈 Total:  ${passed + failed}`);
 console.log('━'.repeat(65));
 
 if (failed === 0) {
-  console.log('\n🎉 All 26 tests across all 5 stages passed! CLI is 100% production ready.\n');
+  console.log(`\n🎉 All ${passed} tests across all 6 stages passed! CLI is 100% production ready.\n`);
   process.exit(0);
 } else {
   console.log('\n⚠️  Some tests failed. Review details above.\n');

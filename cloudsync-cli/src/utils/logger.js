@@ -3,7 +3,7 @@
  * Writes structured JSON logs to .cloudsync/logs/
  */
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
 function getLogsDir() {
@@ -19,7 +19,7 @@ function ensureLogsDir() {
 }
 
 /**
- * Log an operation
+ * Log an operation (with automatic rotation — keeps last 500 entries)
  */
 export function logOperation(type, message, meta = {}) {
   const logsDir = ensureLogsDir();
@@ -34,6 +34,18 @@ export function logOperation(type, message, meta = {}) {
   
   const filename = `op-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.json`;
   writeFileSync(join(logsDir, filename), JSON.stringify(logEntry, null, 2));
+  
+  // Automatic log rotation — keep only the most recent 500 entries
+  try {
+    const MAX_LOGS = 500;
+    const files = readdirSync(logsDir).filter(f => f.endsWith('.json')).sort();
+    if (files.length > MAX_LOGS) {
+      const toDelete = files.slice(0, files.length - MAX_LOGS);
+      for (const f of toDelete) {
+        try { unlinkSync(join(logsDir, f)); } catch (e) { /* skip */ }
+      }
+    }
+  } catch (e) { /* rotation is best-effort */ }
   
   return logEntry;
 }
