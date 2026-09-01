@@ -1,13 +1,11 @@
 name: CI
 
-# Runs on EVERY push to main/develop AND every pull request.
-# Both CI (this) and Release workflows fire on push — CI is the fast gate.
+# Fast pull request validator — runs tests on PRs to main and dev.
+# Direct pushes to dev trigger the full Release and promotion pipeline.
 
 on:
-  push:
-    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
   workflow_dispatch:
 
 jobs:

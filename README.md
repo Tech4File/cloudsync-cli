@@ -101,12 +101,12 @@ CloudSync-CLI enables **anywhere-to-anywhere synchronization** across trusted an
 
 ---
 
-## ⚙️ Automated CI/CD Pipeline
+## ⚙️ Automated CI/CD & Release Pipeline
 
 | Pipeline | Trigger | Automated Operations |
 |---|---|---|
-| **CI Matrix** (`ci.yml`) | Push / PR to `main` | Runs multi-OS test matrix across Node.js 18, 20, and 22. |
-| **Release Pipeline** (`release.yml`) | Push to `main` | Runs test suite $\rightarrow$ builds bundles $\rightarrow$ compiles standalone EXEs/binaries $\rightarrow$ publishes to npmjs $\rightarrow$ publishes to GPR $\rightarrow$ generates GitHub Release with SHA-256 checksums. |
+| **PR Verification** (`ci.yml`) | Pull Request to `dev` / `main` | Runs multi-node test matrix across Node.js LTS and current. |
+| **Release & Promotion** (`release.yml`) | Push to `dev` | Runs full test matrix $\rightarrow$ builds standalone binaries (Windows .exe, Linux, macOS) $\rightarrow$ publishes to npmjs $\rightarrow$ publishes to GitHub Packages $\rightarrow$ creates GitHub Release $\rightarrow$ automatically promotes release & verified commits to `main` with zero duplicate triggers (`[skip ci]`). |
 
 ---
 

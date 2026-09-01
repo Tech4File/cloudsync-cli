@@ -1,11 +1,18 @@
-name: Release
+name: Release & Promotion
 
-# FULLY AUTOMATED — every push to main.
-# CalVer auto-version → Tests → esbuild bundle → pkg binary → Publish.
+# FULLY AUTOMATED DEV -> MAIN PROMOTION PIPELINE
+# 1. Triggers on push to 'dev' branch
+# 2. Runs comprehensive test suite across Node LTS & current
+# 3. Builds standalone binaries (Windows .exe, Linux, macOS) in parallel
+# 4. Calculates unique CalVer (with Git tags + npm registry collision check)
+# 5. Publishes to npmjs and GitHub Packages (GPR)
+# 6. Generates GitHub Release with SHA-256 asset checksums
+# 7. Automatically promotes clean verified code & release commit to 'main'
+# 8. Syncs release tag commit back to 'dev' with [skip ci] to prevent duplicate runs
 
 on:
   push:
-    branches: [ main ]
+    branches: [ dev ]
   workflow_dispatch:
 
 permissions:
@@ -21,27 +28,38 @@ jobs:
       tag: ${{ steps.calver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0, fetch-tags: true }
-      - name: CalVer
+        with:
+          fetch-depth: 0
+      - name: CalVer Calculation & Collision Protection
         id: calver
         run: |
           Y=$(date +%Y); M=$(date +%-m)
-          git fetch --tags 2>/dev/null || true
+          git fetch --tags origin 2>/dev/null || true
           H=0
           for t in $(git tag -l "v${Y}.${M}.*"); do
             B=$(echo "$t" | sed "s/v${Y}.${M}.//")
             [ "$B" -gt "$H" ] 2>/dev/null && H=$B
           done
+
+          # Check npm registry to prevent fatal publishing version collisions
+          NPM_VER=$(npm view cloudsync-cli version 2>/dev/null || echo "0.0.0")
+          if [[ "$NPM_VER" == "${Y}.${M}."* ]]; then
+            NPM_H=$(echo "$NPM_VER" | sed "s/${Y}.${M}.//")
+            [ "$NPM_H" -gt "$H" ] 2>/dev/null && H=$NPM_H
+          fi
+
           V="${Y}.${M}.$((H+1))"
           echo "version=${V}" >> $GITHUB_OUTPUT
           echo "tag=v${V}" >> $GITHUB_OUTPUT
-          echo "Version: ${V}"
+          echo "Next Unique Release Version: ${V}"
 
   test:
     name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     needs: [ version ]
-    defaults: { run: { working-directory: ./cloudsync-cli } }
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     strategy:
       matrix:
         node: ['lts/*', '*']
@@ -59,7 +77,9 @@ jobs:
     name: Windows EXE
     runs-on: windows-latest
     needs: [ test ]
-    defaults: { run: { working-directory: ./cloudsync-cli } }
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -93,7 +113,9 @@ jobs:
     name: Linux Binary
     runs-on: ubuntu-latest
     needs: [ test ]
-    defaults: { run: { working-directory: ./cloudsync-cli } }
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -115,7 +137,9 @@ jobs:
     name: macOS Binary
     runs-on: macos-latest
     needs: [ test ]
-    defaults: { run: { working-directory: ./cloudsync-cli } }
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -134,37 +158,55 @@ jobs:
           retention-days: 7
 
   publish:
-    name: Publish & Release
+    name: Publish, Release & Promote
     runs-on: ubuntu-latest
     needs: [ version, build-windows, build-linux, build-macos ]
-    defaults: { run: { working-directory: ./cloudsync-cli } }
+    defaults:
+      run:
+        working-directory: ./cloudsync-cli
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0, fetch-tags: true }
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
-        with: { name: windows-build, path: cloudsync-cli/assets/windows }
+        with:
+          name: windows-build
+          path: cloudsync-cli/assets/windows
       - uses: actions/download-artifact@v4
-        with: { name: linux-build,   path: cloudsync-cli/assets/linux }
+        with:
+          name: linux-build
+          path: cloudsync-cli/assets/linux
       - uses: actions/download-artifact@v4
-        with: { name: macos-build,   path: cloudsync-cli/assets/macos }
+        with:
+          name: macos-build
+          path: cloudsync-cli/assets/macos
 
-      - name: Set version
+      - name: Setup Git & Author Identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main dev || true
+
+      - name: Set Release Version & Create Commit
         run: |
           V=${{ needs.version.outputs.version }}
           npm pkg set version=$V
           echo "export const VERSION = '$V';" > src/version.mjs
 
-      - name: Create git tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json src/version.mjs
-          git commit -m "release: ${{ needs.version.outputs.version }} [skip ci]" || true
-          git tag ${{ needs.version.outputs.tag }}
-          git push origin HEAD:main ${{ needs.version.outputs.tag }}
+          # Capture latest developer feature commit message
+          LAST_MSG=$(git log -1 --pretty=%s)
 
-      - name: Setup npm registry
+          git add package.json package-lock.json src/version.mjs
+          git commit -m "release: ${V} [skip ci]" -m "Promoted from dev: ${LAST_MSG}" || true
+          git tag ${{ needs.version.outputs.tag }}
+
+          # Promote directly to main and sync release commit back to dev
+          git push origin HEAD:main
+          git push origin HEAD:dev
+          git push origin ${{ needs.version.outputs.tag }}
+
+      - name: Setup npm Registry
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
@@ -172,23 +214,25 @@ jobs:
           cache: npm
           cache-dependency-path: cloudsync-cli/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Dependencies & Verify Package
+        run: |
+          npm ci
+          npm pack --dry-run
 
-      - name: Publish to npm
+      - name: Publish to npmjs
         continue-on-error: true
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Setup GitHub Package Registry
+      - name: Setup GitHub Packages Registry
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
           registry-url: 'https://npm.pkg.github.com'
           scope: '@tech4file'
 
-      - name: Publish to GPR (GitHub Packages)
+      - name: Publish to GitHub Packages (GPR)
         continue-on-error: true
         run: |
           npm pkg set name="@tech4file/cloudsync-cli"
@@ -196,14 +240,14 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Checksums
+      - name: Generate Checksums
         run: |
           mkdir -p assets
           cd assets
           find . -type f ! -name '*.zip' ! -name '*.bat' ! -name '*.iss' ! -name '*.md' ! -name 'LICENSE' \
             -exec sha256sum {} \; > checksums.txt || true
 
-      - name: GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
