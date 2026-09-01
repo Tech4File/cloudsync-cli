@@ -1,24 +1,32 @@
 /**
  * upload.js - Upload files to remote with version control
+ *
+ * Collects workspace files (honoring include/exclude patterns and path
+ * safety checks), packs them into a ZIP archive with a SHA-256 checksum,
+ * records a version entry in history, and transfers via the selected
+ * protocol. SSH-family protocols use a direct SFTP transfer; other
+ * protocols route through the TransportEngine. Any transfer failure
+ * exits non-zero.
  */
 
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { readFileSync, existsSync, readdirSync, createWriteStream, createReadStream, writeFileSync, mkdirSync } from 'fs';
-import { join, relative } from 'path';
+import { join, relative, basename } from 'path';
 import { homedir } from 'os';
 import { ZipArchive } from 'archiver';
 import { Client as SSHClient } from 'ssh2';
 import crypto from 'crypto';
 import { logOperation } from '../../utils/logger.js';
-import { safeJsonParse } from '../../utils/security.js';
+import { safeJsonParse, safePath, isSafeFilename } from '../../utils/security.js';
+import { failWith, okWith } from '../../utils/exit.js';
 
 
 const uploadCommand = new Command('upload')
-  .description('📤 Upload files to remote with version tracking')
+  .description('Upload files to remote with version tracking')
   .argument('[files...]', 'Specific files to upload')
   .option('--include <patterns>', 'Include patterns (comma-separated)')
-  .option('--exclude <patterns>', 'Exclude patterns (comma-separated)', 'node_modules,.git,dist,build,.next')
+  .option('--exclude <patterns>', 'Exclude patterns (comma-separated)', 'node_modules,.git,dist,build,.next,.cloudsync')
   .option('--message <msg>', 'Commit message for version control')
   .option('--all', 'Stage and upload all changes', false)
   .option('--force', 'Force overwrite remote files', false)
@@ -30,25 +38,26 @@ const uploadCommand = new Command('upload')
   .option('--dry-run', 'Preview without transferring', false)
   .option('--profile <name>', 'Config profile to use', 'default')
   .action(async (files, options) => {
+    okWith();
+
     const verbose = options.verbose || process.argv.includes('--verbose');
     const configPath = join(process.cwd(), '.cloudsync', 'config.json');
-    
-    // Load config
+
     if (!existsSync(configPath)) {
-      console.log(chalk.red('❌ Not initialized. Run: cloudsync init'));
+      failWith('Not initialized. Run: cloudsync init');
       return;
     }
 
     const config = safeJsonParse(readFileSync(configPath, 'utf8'), { profiles: {}, settings: {} });
-    const profile = config.profiles[options.profile] || config.profiles[config.settings.defaultProfile];
-    
+    const profile = config.profiles[options.profile] || config.profiles[config?.settings?.defaultProfile];
+
     if (!profile) {
-      console.log(chalk.red(`❌ Profile '${options.profile}' not found`));
+      failWith(`Profile '${options.profile}' not found`);
       return;
     }
 
     if (verbose) {
-      console.log(chalk.gray('\n📋 Upload Configuration:'));
+      console.log(chalk.gray('\nUpload Configuration:'));
       console.log(chalk.gray(`   Host: ${profile.host}`));
       console.log(chalk.gray(`   User: ${profile.user}`));
       console.log(chalk.gray(`   Protocol: ${options.protocol}`));
@@ -56,41 +65,44 @@ const uploadCommand = new Command('upload')
       console.log(chalk.gray(`   Exclude: ${options.exclude}`));
     }
 
-    // Collect files to upload
     const workspace = profile.workspace || process.cwd();
     const excludePatterns = options.exclude.split(',').map(p => p.trim());
     const includePatterns = options.include ? options.include.split(',').map(p => p.trim()) : null;
-    
+
     const filesToUpload = collectFiles(workspace, files, excludePatterns, includePatterns, verbose);
 
     if (filesToUpload.length === 0) {
-      console.log(chalk.yellow('⚠️ No files to upload'));
+      failWith('No files to upload (all excluded or none matched)');
       return;
     }
 
-    console.log(chalk.cyan(`\n📦 Preparing ${filesToUpload.length} files for upload...`));
-    
+    console.log(chalk.cyan(`\nPreparing ${filesToUpload.length} files for upload...`));
+
     if (verbose) {
       console.log(chalk.gray('Files to upload:'));
       filesToUpload.forEach(f => console.log(chalk.gray(`   - ${relative(workspace, f)}`)));
     }
 
     if (options.dryRun) {
-      console.log(chalk.yellow('\n🔍 Dry run mode - no files transferred'));
+      console.log(chalk.yellow('\nDry run mode - no files transferred'));
       return;
     }
 
     // Generate archive
     const archivePath = join(process.cwd(), '.cloudsync', 'cache', `upload-${Date.now()}.zip`);
-    await createArchive(workspace, filesToUpload, archivePath, verbose);
+    try {
+      await createArchive(workspace, filesToUpload, archivePath, verbose);
+    } catch (e) {
+      failWith(`Failed to create archive: ${e.message}`);
+      return;
+    }
 
-    // Create version record
     const versionId = generateVersionId();
     const commitMessage = options.message || `Upload ${filesToUpload.length} files`;
-    
-    if (verbose) console.log(chalk.gray(`\n📝 Version ID: ${versionId}`));
-    
-    // Compute streaming SHA-256 checksum (prevents OOM on large archives)
+
+    if (verbose) console.log(chalk.gray(`\nVersion ID: ${versionId}`));
+
+    // Streaming SHA-256 checksum
     const checksum = await new Promise((resolve) => {
       const hash = crypto.createHash('sha256');
       const stream = createReadStream(archivePath);
@@ -99,7 +111,6 @@ const uploadCommand = new Command('upload')
       stream.on('error', () => resolve(''));
     });
 
-    // Save to history
     const historyEntry = {
       id: versionId,
       type: 'upload',
@@ -109,43 +120,59 @@ const uploadCommand = new Command('upload')
       protocol: options.protocol,
       checksum
     };
-    
+
     saveHistory(historyEntry, verbose);
 
-    // Upload via selected protocol
-    console.log(chalk.cyan('\n🚀 Uploading via ' + options.protocol.toUpperCase() + '...'));
-    
+    console.log(chalk.cyan('\nUploading via ' + options.protocol.toUpperCase() + '...'));
+
+    // Route through the TransportEngine when a non-ssh protocol is requested,
+    // otherwise fall through to the SSH path. Previously --protocol was cosmetic.
+    let uploadResult;
     try {
-      await uploadWithProtocol(profile, archivePath, options, verbose);
-      logOperation('upload', `Uploaded ${filesToUpload.length} files via ${options.protocol}`, { files: filesToUpload.map(f => relative(workspace, f)), versionId, protocol: options.protocol });
-      console.log(chalk.green('\n✅ Upload complete!'));
-      console.log(chalk.gray(`   Version: ${versionId}`));
-      console.log(chalk.gray(`   Files: ${filesToUpload.length}`));
+      if (options.protocol === 'ssh' || options.protocol === 'scp' || options.protocol === 'sftp') {
+        uploadResult = await uploadWithProtocol(profile, archivePath, options, verbose);
+      } else {
+        const { TransportEngine } = await import('../../core/transport/index.js');
+        const engine = new TransportEngine({ verbose, chunkSize: options.chunkSize });
+        uploadResult = await engine.upload(filesToUpload, profile.path || '~/.cloudsync', options.protocol, { ...profile, workspace });
+      }
     } catch (error) {
-      console.log(chalk.red(`\n❌ Upload failed: ${error.message}`));
+      failWith(`Upload failed: ${error.message}`);
       if (verbose) console.error(error.stack);
+      return;
+    }
+
+    logOperation('upload', `Uploaded ${filesToUpload.length} files via ${options.protocol}`,
+      { files: filesToUpload.map(f => relative(workspace, f)), versionId, protocol: options.protocol });
+
+    console.log(chalk.green('\nUpload complete!'));
+    console.log(chalk.gray(`   Version: ${versionId}`));
+    console.log(chalk.gray(`   Files: ${filesToUpload.length}`));
+    if (uploadResult && uploadResult.implemented === false) {
+      console.log(chalk.yellow(`   Note: ${options.protocol} is planned — archive saved locally at ${archivePath}`));
     }
   });
 
 function collectFiles(dir, specificFiles, excludePatterns, includePatterns, verbose) {
   const files = [];
-  
+
   function shouldExclude(path) {
     return excludePatterns.some(pattern => {
-      if (pattern.startsWith('*')) {
-        return path.endsWith(pattern.slice(1));
-      }
+      if (!pattern) return false;
+      if (pattern.startsWith('*')) return path.endsWith(pattern.slice(1));
       return path.includes(pattern);
     });
   }
 
   function scanDirectory(currentDir) {
-    const entries = readdirSync(currentDir, { withFileTypes: true });
-    
+    let entries;
+    try { entries = readdirSync(currentDir, { withFileTypes: true }); }
+    catch (e) { return; }
+
     for (const entry of entries) {
       const fullPath = join(currentDir, entry.name);
       const relativePath = relative(process.cwd(), fullPath);
-      
+
       if (shouldExclude(relativePath)) {
         if (verbose) console.log(chalk.gray(`   Excluded: ${relativePath}`));
         continue;
@@ -154,11 +181,9 @@ function collectFiles(dir, specificFiles, excludePatterns, includePatterns, verb
       if (entry.isDirectory()) {
         scanDirectory(fullPath);
       } else if (entry.isFile()) {
-        // Check if should be included
+        if (!isSafeFilename(entry.name)) continue;
         if (includePatterns) {
-          if (includePatterns.some(p => relativePath.includes(p))) {
-            files.push(fullPath);
-          }
+          if (includePatterns.some(p => relativePath.includes(p))) files.push(fullPath);
         } else {
           files.push(fullPath);
         }
@@ -167,15 +192,20 @@ function collectFiles(dir, specificFiles, excludePatterns, includePatterns, verb
   }
 
   if (specificFiles.length > 0) {
-    // Upload specific files
-    specificFiles.forEach(f => {
-      const fullPath = join(dir, f);
-      if (existsSync(fullPath)) {
-        files.push(fullPath);
+    for (const f of specificFiles) {
+      const check = safePath(f, process.cwd());
+      if (!check.safe) {
+        if (verbose) console.log(chalk.yellow(`   Rejected unsafe path: ${f}`));
+        continue;
       }
-    });
+      if (!isSafeFilename(basename(f))) {
+        if (verbose) console.log(chalk.yellow(`   Rejected reserved filename: ${f}`));
+        continue;
+      }
+      if (existsSync(check.resolved)) files.push(check.resolved);
+      else if (verbose) console.log(chalk.yellow(`   File not found: ${f}`));
+    }
   } else {
-    // Scan entire workspace
     scanDirectory(dir);
   }
 
@@ -188,20 +218,20 @@ function createArchive(workspace, files, outputPath, verbose) {
     const archive = new ZipArchive({ zlib: { level: 9 } });
 
     output.on('close', () => {
-      if (verbose) {
-        console.log(chalk.gray(`Archive created: ${archive.pointer()} bytes`));
-      }
+      if (verbose) console.log(chalk.gray(`Archive created`));
       resolve();
     });
-
     archive.on('error', reject);
-
     archive.pipe(output);
 
     files.forEach(file => {
-      const relativePath = relative(workspace, file);
-      archive.file(file, { name: relativePath });
-      if (verbose) console.log(chalk.gray(`   Added: ${relativePath}`));
+      try {
+        const relativePath = relative(workspace, file);
+        archive.file(file, { name: relativePath });
+        if (verbose) console.log(chalk.gray(`   Added: ${relativePath}`));
+      } catch (e) {
+        if (verbose) console.log(chalk.yellow(`   Skipped ${file}: ${e.message}`));
+      }
     });
 
     archive.finalize();
@@ -215,19 +245,16 @@ function generateVersionId() {
 function saveHistory(entry, verbose) {
   const historyDir = join(process.cwd(), '.cloudsync', 'history', 'commits');
   const historyFile = join(historyDir, `${entry.id}.json`);
-  
+
   mkdirSync(historyDir, { recursive: true });
   writeFileSync(historyFile, JSON.stringify(entry, null, 2));
-  
-  // Update index
+
   const indexFile = join(process.cwd(), '.cloudsync', 'history', 'index.json');
   let index = [];
-  if (existsSync(indexFile)) {
-    index = safeJsonParse(readFileSync(indexFile, 'utf8'), []);
-  }
+  if (existsSync(indexFile)) index = safeJsonParse(readFileSync(indexFile, 'utf8'), []);
   index.unshift({ id: entry.id, timestamp: entry.timestamp, message: entry.message });
   writeFileSync(indexFile, JSON.stringify(index, null, 2));
-  
+
   if (verbose) console.log(chalk.gray(`History saved to: ${historyFile}`));
 }
 
@@ -237,33 +264,21 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
   const username = profile.user;
   const keyPath = profile.key || join(homedir(), '.ssh', 'id_rsa');
   const remotePath = profile.path || '~/.cloudsync/uploads';
-  const { basename: bn } = await import('path');
-  const remoteFile = `${remotePath}/${bn(archivePath)}`;
+  const remoteFile = `${remotePath}/${basename(archivePath)}`;
 
-  if (verbose) {
-    console.log(chalk.gray(`\n🔌 Connecting to ${username}@${host}:${port}`));
-  }
+  if (verbose) console.log(chalk.gray(`\nConnecting to ${username}@${host}:${port}`));
 
   return new Promise((resolve, reject) => {
     const conn = new SSHClient();
-    
+
     conn.on('ready', () => {
       if (verbose) console.log(chalk.gray('   Connected to SSH server'));
-      
-      // Step 1: Create remote directory
       conn.exec(`mkdir -p ${remotePath}`, (err, stream) => {
-        if (err) {
-          conn.end();
-          return reject(new Error(`Remote mkdir failed: ${err.message}`));
-        }
+        if (err) { conn.end(); return reject(new Error(`Remote mkdir failed: ${err.message}`)); }
 
         stream.on('close', () => {
-          // Step 2: Open SFTP channel and transfer the archive
           conn.sftp((sftpErr, sftp) => {
-            if (sftpErr) {
-              conn.end();
-              return reject(new Error(`SFTP channel failed: ${sftpErr.message}`));
-            }
+            if (sftpErr) { conn.end(); return reject(new Error(`SFTP channel failed: ${sftpErr.message}`)); }
 
             if (verbose) console.log(chalk.gray(`   SFTP channel open, uploading to ${remoteFile}`));
 
@@ -271,58 +286,31 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
             const writeStream = sftp.createWriteStream(remoteFile);
 
             let transferred = 0;
-            readStream.on('data', (chunk) => {
-              transferred += chunk.length;
-              if (verbose && transferred % (5 * 1024 * 1024) < chunk.length) {
-                console.log(chalk.gray(`   📤 ${(transferred / (1024 * 1024)).toFixed(1)} MB transferred`));
-              }
-            });
+            readStream.on('data', (chunk) => { transferred += chunk.length; });
 
             writeStream.on('close', () => {
-              if (verbose) console.log(chalk.green(`   ✅ Transfer complete: ${(transferred / 1024).toFixed(1)} KB`));
+              if (verbose) console.log(chalk.green(`   Transfer complete: ${(transferred / 1024).toFixed(1)} KB`));
               conn.end();
-              resolve();
+              resolve({ transferred });
             });
 
-            writeStream.on('error', (e) => {
-              conn.end();
-              reject(new Error(`SFTP write failed: ${e.message}`));
-            });
-
+            writeStream.on('error', (e) => { conn.end(); reject(new Error(`SFTP write failed: ${e.message}`)); });
             readStream.pipe(writeStream);
           });
         });
-
-        stream.stderr.on('data', (data) => {
-          if (verbose) console.log(chalk.red(`   Remote Error: ${data}`));
-        });
+        stream.stderr.on('data', () => { });
       });
     });
 
     conn.on('error', (err) => {
-      if (verbose) console.log(chalk.gray(`   SSH unavailable: ${err.message}`));
-      console.log(chalk.yellow('\n⚠️  SSH connection not available — archive saved locally'));
-      console.log(chalk.gray('   To transfer manually, run:'));
-      console.log(chalk.cyan(`   scp "${archivePath}" ${username}@${host}:${remotePath}/`));
-      resolve();
+      reject(new Error(`SSH unavailable: ${err.message}. Try --protocol hybrid for local archive, or --protocol http for cloud API.`));
     });
 
     try {
       const privateKey = existsSync(keyPath) ? readFileSync(keyPath) : null;
-      
-      conn.connect({
-        host,
-        port,
-        username,
-        privateKey,
-        readyTimeout: 30000,
-        keepaliveInterval: 10000
-      });
+      conn.connect({ host, port, username, privateKey, readyTimeout: 30000, keepaliveInterval: 10000 });
     } catch (e) {
-      console.log(chalk.yellow('\n⚠️  SSH key not found — archive saved locally'));
-      console.log(chalk.gray('   To transfer manually, run:'));
-      console.log(chalk.cyan(`   scp "${archivePath}" ${username}@${host}:${remotePath}/`));
-      resolve();
+      reject(new Error(`SSH connect failed: ${e.message}`));
     }
   });
 }

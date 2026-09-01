@@ -2,13 +2,18 @@
 
 /**
  * CloudSync-CLI Production Verification & Staged Test Suite
- * 
+ *
  * Staging Architecture:
  * - Stage 1: Core CLI & Command Routing Engine
  * - Stage 2: Git-Like VCS & Snapshot Lifecycle
  * - Stage 3: Cryptography & Security Layer
  * - Stage 4: Network Transport & Cloud Protocols
  * - Stage 5: Developer UX, Scaffolding & Platform Installers
+ * - Stage 6: Threat Modeling & Security Hardening Verification
+ * - Stage 7: Exit-Code Contract & Error-Path Verification
+ *
+ * A separate end-to-end network test (share -> fetch) lives in
+ * test-integration.js and is executed by `npm test` after this suite.
  */
 
 import { execSync } from 'child_process';
@@ -24,22 +29,41 @@ const TEST_DIR = join(__dirname, 'test-workspace');
 
 import { VERSION as EXPECTED_VERSION } from './src/version.mjs';
 
-// Setup fresh sandbox directory
-if (existsSync(TEST_DIR)) {
-  rmSync(TEST_DIR, { recursive: true, force: true });
+function safeRm(dir) {
+  if (existsSync(dir)) {
+    try { rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } catch (_) { }
+  }
 }
+
+// Setup fresh sandbox directory
+safeRm(TEST_DIR);
 mkdirSync(TEST_DIR, { recursive: true });
 
 function run(cmd, dir = process.cwd(), timeout = 20000) {
   try {
-    return execSync(`node "${CLI_PATH}" ${cmd}`, { 
-      encoding: 'utf8', 
+    return execSync(`node "${CLI_PATH}" ${cmd}`, {
+      encoding: 'utf8',
       cwd: dir,
       timeout,
       env: { ...process.env, NODE_ENV: 'test', CI: 'true' }
     });
   } catch (e) {
     return e.stdout || e.stderr || e.message;
+  }
+}
+
+// Same as run(), but returns { output, code } so exit codes can be asserted.
+function runWithCode(cmd, dir = process.cwd(), timeout = 20000) {
+  try {
+    const output = execSync(`node "${CLI_PATH}" ${cmd}`, {
+      encoding: 'utf8',
+      cwd: dir,
+      timeout,
+      env: { ...process.env, NODE_ENV: 'test', CI: 'true' }
+    });
+    return { output, code: 0 };
+  } catch (e) {
+    return { output: e.stdout || e.stderr || e.message, code: e.status ?? 1 };
   }
 }
 
@@ -121,7 +145,7 @@ let commitId = null;
 try {
   const historyIndex = JSON.parse(readFileSync(join(TEST_DIR, '.cloudsync', 'history', 'index.json'), 'utf8'));
   if (historyIndex.length > 0) commitId = historyIndex[0].id;
-} catch (e) {}
+} catch (e) { }
 
 const rollbackOut = commitId ? run(`rollback ${commitId}`, TEST_DIR) : '';
 test('Test 2.9: Version Rollback (rollback)', rollbackOut.includes('Rollback complete'), rollbackOut);
@@ -143,7 +167,7 @@ try {
   const cipher = encryptData(Buffer.from(secretText), passphrase);
   const plain = decryptData(cipher, passphrase);
   cryptoModuleOk = plain.toString() === secretText;
-} catch (e) {}
+} catch (e) { }
 test('Test 3.1: Authenticated AES-256-GCM Snapshot Encryption (crypto)', cryptoModuleOk);
 
 let streamHashOk = false;
@@ -153,7 +177,7 @@ try {
   const testFile = join(TEST_DIR, 'data', 'config.json');
   const hash = await vcs.calculateArchiveChecksum(testFile);
   streamHashOk = typeof hash === 'string' && hash.length === 64;
-} catch (e) {}
+} catch (e) { }
 test('Test 3.2: Streaming Chunk-Based SHA-256 Hashing (vcs)', streamHashOk);
 
 // ─────────────────────────────────────────────────────────────
@@ -192,7 +216,7 @@ test('Test 4.8: Direct Share Receiver (fetch --help)', fetchOut.includes('Receiv
 console.log('\n📦 [Stage 5] Developer UX, Scaffolding & Installers');
 console.log('─'.repeat(60));
 
-const ignoreOut = run('ignore --template node', TEST_DIR);
+const ignoreOut = run('ignore --template node --force', TEST_DIR);
 const ignoreCreated = existsSync(join(TEST_DIR, '.cloudsyncignore'));
 test('Test 5.1: Smart Ignore Generator (ignore)', ignoreOut.includes('generated successfully') && ignoreCreated, ignoreOut);
 
@@ -203,7 +227,7 @@ try {
   bar.update(512);
   bar.finish();
   progressModuleOk = bar.total === 1024;
-} catch (e) {}
+} catch (e) { }
 test('Test 5.2: Native Terminal Progress Bar (progress)', progressModuleOk);
 
 const installShExists = existsSync(join(__dirname, 'installer', 'install.sh'));
@@ -264,14 +288,60 @@ test('Test 6.4: Safe Filename & Device Name Sanitization (isSafeFilename)', safe
 test('Test 6.5: Zip-Slip Vulnerability Extraction Mitigation (vcs)', zipSlipOk);
 
 // ─────────────────────────────────────────────────────────────
+// STAGE 7: EXIT-CODE CONTRACT & ERROR-PATH VERIFICATION
+// ─────────────────────────────────────────────────────────────
+console.log('\n[Stage 7] Exit-Code Contract & Error-Path Verification');
+console.log('─'.repeat(60));
+
+// Fresh workspace for error-path checks
+const ERR_DIR = join(__dirname, 'test-workspace-errors');
+safeRm(ERR_DIR);
+mkdirSync(ERR_DIR, { recursive: true });
+
+// 7.1: invalid hostname must exit non-zero
+const invalidInit = runWithCode('init --host "not a host!" --force', ERR_DIR);
+test('Test 7.1: Invalid hostname exits non-zero (init)', invalidInit.code !== 0, invalidInit.output);
+
+// 7.2: invalid port must exit non-zero
+const invalidPort = runWithCode('init --host x.com --port 99999 --force', ERR_DIR);
+test('Test 7.2: Invalid port exits non-zero (init)', invalidPort.code !== 0, invalidPort.output);
+
+// 7.3: committing with nothing staged must exit non-zero
+run('init --host testserver.local --user admin --force', ERR_DIR);
+const emptyCommit = runWithCode('commit "should fail"', ERR_DIR);
+test('Test 7.3: Empty commit exits non-zero (commit)', emptyCommit.code !== 0, emptyCommit.output);
+
+// 7.4: staging a path-traversal escape must exit non-zero
+writeFileSync(join(ERR_DIR, 'dummy.txt'), 'x');
+const traversal = runWithCode('stage ../../../../etc/passwd', ERR_DIR);
+test('Test 7.4: Path traversal staging exits non-zero (stage)', traversal.code !== 0, traversal.output);
+
+// 7.5: staging a Windows reserved filename must exit non-zero
+const reserved = runWithCode('stage CON', ERR_DIR);
+test('Test 7.5: Reserved filename staging exits non-zero (stage)', reserved.code !== 0, reserved.output);
+
+// 7.6: rollback to a non-existent version must exit non-zero
+run('stage dummy.txt', ERR_DIR);
+run('commit "base"', ERR_DIR);
+const badRollback = runWithCode('rollback nonexistent-version', ERR_DIR);
+test('Test 7.6: Unknown version rollback exits non-zero (rollback)', badRollback.code !== 0, badRollback.output);
+
+// 7.7: successful commands must exit zero
+const goodStatus = runWithCode('status', ERR_DIR);
+test('Test 7.7: Successful status exits zero', goodStatus.code === 0, goodStatus.output);
+
+// 7.8: fetch to a dead host must exit non-zero
+const deadFetch = runWithCode('fetch http://127.0.0.1:1/share/deadbeef', ERR_DIR);
+test('Test 7.8: Unreachable share exits non-zero (fetch)', deadFetch.code !== 0, deadFetch.output);
+
+// Teardown error workspace
+safeRm(ERR_DIR);
+
+// ─────────────────────────────────────────────────────────────
 // CLEANUP & SUMMARY
 // ─────────────────────────────────────────────────────────────
 // Teardown test workspace
-if (existsSync(TEST_DIR)) {
-  try {
-    rmSync(TEST_DIR, { recursive: true, force: true });
-  } catch (e) {}
-}
+safeRm(TEST_DIR);
 
 console.log('\n' + '━'.repeat(65));
 console.log('📊 Comprehensive Staged Test Suite Summary:');
@@ -281,9 +351,10 @@ console.log(`   📈 Total:  ${passed + failed}`);
 console.log('━'.repeat(65));
 
 if (failed === 0) {
-  console.log(`\n🎉 All ${passed} tests across all 6 stages passed! CLI is 100% production ready.\n`);
+  console.log(`\nAll ${passed} tests across all 7 stages passed! CLI is production ready.`);
+  console.log('Next: run "node test-integration.js" for the end-to-end share -> fetch test.\n');
   process.exit(0);
 } else {
-  console.log('\n⚠️  Some tests failed. Review details above.\n');
+  console.log('\nSome tests failed. Review details above.\n');
   process.exit(1);
 }

@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node bin/cloudsync.js",
     "dev": "node --watch bin/cloudsync.js",
-    "test": "node test.js",
+    "test": "node test.js && node test-integration.js",
+    "test:unit": "node test.js",
+    "test:integration": "node test-integration.js",
     "lint": "eslint src/ || true",
     "lint:fix": "eslint src/ --fix || true",
     "format": "prettier --write \"**/*.js\" || true",
@@ -79,6 +81,14 @@
     "esbuild": "^0.28.2",
     "eslint": "^10.8.1"
   },
+  "files": [
+    "bin",
+    "src",
+    "scripts",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "engines": {
     "node": ">=18.0.0"
   },

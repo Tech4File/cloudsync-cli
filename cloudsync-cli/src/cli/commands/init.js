@@ -1,5 +1,9 @@
 /**
  * init.js - Initialize CloudSync configuration
+ *
+ * Creates the .cloudsync/ directory structure and writes config.json with a
+ * connection profile. Host/port inputs are validated before saving; invalid
+ * arguments exit non-zero so scripts can detect a failed init.
  */
 
 import { Command } from 'commander';
@@ -9,6 +13,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { logOperation } from '../../utils/logger.js';
 import { isValidHost, isValidPort, safeJsonParse, sanitizeInput } from '../../utils/security.js';
+import { failWith, okWith } from '../../utils/exit.js';
 
 const initCommand = new Command('init')
   .description('Initialize CloudSync configuration profile')
@@ -22,10 +27,12 @@ const initCommand = new Command('init')
   .option('--force', 'Overwrite existing configuration', false)
   .option('--verbose', 'Show detailed output', false)
   .action(async (options) => {
+    okWith();
+
     const verbose = options.verbose || process.argv.includes('--verbose');
-    
+
     if (verbose) {
-      console.log(chalk.gray('\n🔍 Verbose mode enabled'));
+      console.log(chalk.gray('\nVerbose mode enabled'));
       console.log(chalk.gray('Options received:'), options);
     }
 
@@ -62,12 +69,11 @@ const initCommand = new Command('init')
 
     // Validate inputs
     if (host !== 'your-server.com' && !isValidHost(host)) {
-      console.log(chalk.red(`\n❌ Invalid hostname: "${host}"`));
-      console.log(chalk.gray('   Use a valid domain (e.g., server.example.com) or IP address'));
+      failWith(`Invalid hostname: "${host}". Use a valid domain (e.g., server.example.com) or IP address.`);
       return;
     }
     if (!isValidPort(port)) {
-      console.log(chalk.red(`\n❌ Invalid port: ${port} (must be 1-65535)`));
+      failWith(`Invalid port: ${port} (must be 1-65535).`);
       return;
     }
 
@@ -92,21 +98,29 @@ const initCommand = new Command('init')
       defaultProfile: profileName
     };
 
-    // Save config
-    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    // Save config (atomic)
+    const tmp = configPath + '.tmp';
+    writeFileSync(tmp, JSON.stringify(config, null, 2));
+    try {
+      const { renameSync } = await import('fs');
+      renameSync(tmp, configPath);
+    } catch (_) {
+      writeFileSync(configPath, JSON.stringify(config, null, 2));
+      try { (await import('fs')).unlinkSync(tmp); } catch (__) { }
+    }
 
     logOperation('init', `Initialized profile '${profileName}' -> ${host}:${port}`);
 
-    console.log(chalk.green('\n✅ CloudSync initialized successfully!'));
-    console.log(chalk.gray('━'.repeat(50)));
+    console.log(chalk.green('\nCloudSync initialized successfully!'));
+    console.log(chalk.gray('-'.repeat(50)));
     console.log(chalk.white(`   Profile: ${chalk.cyan(profileName)}`));
     console.log(chalk.white(`   Host: ${chalk.cyan(host)}`));
     console.log(chalk.white(`   User: ${chalk.cyan(user)}`));
     console.log(chalk.white(`   Port: ${chalk.cyan(port)}`));
     console.log(chalk.white(`   Protocol: ${chalk.cyan(protocol)}`));
-    console.log(chalk.gray('━'.repeat(50)));
-    console.log(chalk.gray(`\n📁 Config saved to: ${configPath}`));
-    console.log(chalk.cyan('\n🚀 Next steps:'));
+    console.log(chalk.gray('-'.repeat(50)));
+    console.log(chalk.gray(`\nConfig saved to: ${configPath}`));
+    console.log(chalk.cyan('\nNext steps:'));
     console.log(chalk.gray('   cloudsync upload --help'));
     console.log(chalk.gray('   cloudsync doctor  # Test your connection'));
   });

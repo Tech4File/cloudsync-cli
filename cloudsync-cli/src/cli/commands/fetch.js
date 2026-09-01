@@ -1,16 +1,21 @@
 /**
  * fetch.js - Direct CLI-to-CLI Share Receiver for CloudSync-CLI
- * 
- * Connects directly to an active 'cloudsync share' session over HTTP/LAN/WAN,
- * validates session credentials, and downloads files directly to local workspace.
+ *
+ * Connects to an active `cloudsync share` session over HTTP, validates the
+ * session health via GET /status ({"status":"active"}), then downloads the
+ * payload from /download/<id> into the local workspace.
+ *
+ * Credentials are sent as headers: x-share-password and x-share-token.
+ * Every failure path exits with code 1 so scripts can detect errors.
  */
 
 import { Command } from 'commander';
 import chalk from 'chalk';
 import http from 'http';
-import { existsSync, writeFileSync, mkdirSync } from 'fs';
-import { join, resolve } from 'path';
+import { existsSync, writeFileSync, mkdirSync, statSync } from 'fs';
+import { join, resolve, basename } from 'path';
 import { safeJsonParse } from '../../utils/security.js';
+import { failWith, okWith } from '../../utils/exit.js';
 
 const fetchCommand = new Command('fetch')
   .description('📥 Receive shared files directly from an active CloudSync share session')
@@ -18,11 +23,14 @@ const fetchCommand = new Command('fetch')
   .option('--host <hostname>', 'Remote host (if target is Share ID)', '127.0.0.1')
   .option('--port <number>', 'Remote port (if target is Share ID)', (v) => parseInt(v, 10), 3000)
   .option('--password <pwd>', 'Password if session is protected')
+  .option('--token <token>', 'Session token (required by share server)')
   .option('--output <path>', 'Output destination directory', './')
+  .option('--timeout <ms>', 'HTTP timeout in milliseconds', (v) => parseInt(v, 10), 30000)
   .option('--verbose', 'Show detailed download progress', false)
   .action(async (target, options) => {
+    okWith();
+
     const verbose = options.verbose || process.argv.includes('--verbose');
-    
     let host = options.host;
     let port = options.port;
     let shareId = target;
@@ -32,11 +40,11 @@ const fetchCommand = new Command('fetch')
       try {
         const parsed = new URL(target);
         host = parsed.hostname || '127.0.0.1';
-        port = parsed.port ? parseInt(parsed.port, 10) : 80;
+        port = parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80);
         const parts = parsed.pathname.split('/').filter(Boolean);
         shareId = parts[parts.length - 1] || target;
       } catch (e) {
-        console.log(chalk.red(`❌ Invalid share URL: ${target}`));
+        failWith(`❌ Invalid share URL: ${target}`);
         return;
       }
     }
@@ -52,44 +60,54 @@ const fetchCommand = new Command('fetch')
     console.log(chalk.cyan('\n🔍 Connecting to sharing session...'));
 
     try {
-      // Step 1: Check session status
+      // Step 1: verify the session is live via /status
       const statusUrl = `http://${host}:${port}/status`;
-      const statusData = await httpGet(statusUrl, 5000);
+      const statusData = await httpGet(statusUrl, 5000, {}, false);
       const status = safeJsonParse(statusData.body, {});
 
       if (status.status !== 'active') {
-        console.log(chalk.red(`❌ Share session is not active on ${host}:${port}`));
+        failWith(`❌ Share session is not active on ${host}:${port} (status="${status.status || 'missing'}")`);
         return;
       }
 
       console.log(chalk.green(`✅ Connected to session (${status.type || 'file'} share)`));
-      
-      // Step 2: Query share dashboard
-      const shareUrl = `http://${host}:${port}/share/${shareId}`;
-      const sharePage = await httpGet(shareUrl, 5000);
 
+      // Step 2: Query share dashboard (auth via token + password headers)
+      const headers = {};
+      if (options.password) headers['x-share-password'] = options.password;
+      if (options.token) headers['x-share-token'] = options.token;
+
+      const shareUrl = `http://${host}:${port}/share/${shareId}`;
+      const sharePage = await httpGet(shareUrl, 5000, headers, false);
+
+      if (sharePage.statusCode === 401) {
+        failWith('Unauthorized — wrong password, or the session requires a token. Pass --password <pwd> and/or --token <t>.');
+        return;
+      }
+      if (sharePage.statusCode === 410) {
+        failWith('❌ Share link has expired.');
+        return;
+      }
       if (sharePage.statusCode !== 200) {
-        console.log(chalk.red(`❌ Could not access share ID ${shareId} (HTTP ${sharePage.statusCode})`));
+        failWith(`❌ Could not access share ID ${shareId} (HTTP ${sharePage.statusCode})`);
         return;
       }
 
       // Step 3: Download payload
       console.log(chalk.cyan('\n📦 Downloading shared files...'));
       const downloadUrl = `http://${host}:${port}/download/${shareId}`;
-      const headers = {};
-      if (options.password) {
-        headers['x-share-password'] = options.password;
-      }
-
-      const downloadRes = await httpGet(downloadUrl, 30000, headers, true);
+      const downloadRes = await httpGet(downloadUrl, options.timeout, headers, true);
 
       if (downloadRes.statusCode === 401) {
-        console.log(chalk.red('\n❌ Unauthorized: This share is password-protected. Provide `--password <pwd>`.'));
+        failWith('❌ Unauthorized: This share is password-protected. Provide --password <pwd> --token <t>.');
         return;
       }
-
+      if (downloadRes.statusCode === 410) {
+        failWith('❌ Share link has expired.');
+        return;
+      }
       if (downloadRes.statusCode !== 200) {
-        console.log(chalk.red(`\n❌ Download failed: HTTP ${downloadRes.statusCode}`));
+        failWith(`❌ Download failed: HTTP ${downloadRes.statusCode}`);
         return;
       }
 
@@ -98,24 +116,32 @@ const fetchCommand = new Command('fetch')
         mkdirSync(outDir, { recursive: true });
       }
 
-      const outFile = join(outDir, `shared_${shareId}.zip`);
+      // Choose filename from Content-Disposition if present, otherwise fall back
+      let filename = `shared_${shareId}.zip`;
+      const cd = downloadRes.headers['content-disposition'] || '';
+      const m = cd.match(/filename="?([^";]+)"?/);
+      if (m && m[1]) filename = m[1];
+
+      const outFile = join(outDir, filename);
       writeFileSync(outFile, downloadRes.rawBuffer);
 
+      const sz = statSync(outFile).size;
       console.log(chalk.green(`\n✅ Download complete!`));
       console.log(chalk.white(`   Saved: ${chalk.cyan(outFile)}`));
+      console.log(chalk.gray(`   Size:  ${sz.toLocaleString()} bytes`));
       console.log(chalk.gray('━'.repeat(60)));
     } catch (err) {
-      if (verbose) {
-        console.error(chalk.red(`\n❌ Fetch failed: ${err.message}`));
-      } else {
-        console.log(chalk.red(`\n❌ Could not connect to remote host ${host}:${port} (${err.message})`));
-      }
+      failWith(`❌ Could not connect to remote host ${host}:${port} (${err.message})`);
+      if (verbose && err.stack) console.error(err.stack);
     }
   });
 
 function httpGet(targetUrl, timeout = 10000, customHeaders = {}, showProgress = false) {
   return new Promise((resolve, reject) => {
-    const parsed = new URL(targetUrl);
+    let parsed;
+    try { parsed = new URL(targetUrl); }
+    catch (e) { reject(new Error(`Invalid URL: ${targetUrl}`)); return; }
+
     const options = {
       hostname: parsed.hostname,
       port: parsed.port,
@@ -125,9 +151,9 @@ function httpGet(targetUrl, timeout = 10000, customHeaders = {}, showProgress = 
 
     const req = http.get(options, (res) => {
       const chunks = [];
-      const totalBytes = parseInt(res.headers['content-length'], 10) || 1024;
+      const totalBytes = parseInt(res.headers['content-length'], 10) || 0;
       let progressBar = null;
-      if (showProgress && res.statusCode === 200) {
+      if (showProgress && res.statusCode === 200 && totalBytes > 0) {
         import('../../utils/progress.js').then(({ ProgressBar }) => {
           progressBar = new ProgressBar(totalBytes, 'Receiving Payload');
         }).catch(() => {});
@@ -148,12 +174,14 @@ function httpGet(targetUrl, timeout = 10000, customHeaders = {}, showProgress = 
           rawBuffer: buffer
         });
       });
+
+      res.on('error', (e) => reject(e));
     });
 
     req.on('error', reject);
     req.setTimeout(timeout, () => {
       req.destroy();
-      reject(new Error('Connection timed out'));
+      reject(new Error(`Connection timed out after ${timeout}ms`));
     });
   });
 }

@@ -26,3 +26,4 @@ test-workspace/
 test.env
 clone-test/
 playground/
+tmp

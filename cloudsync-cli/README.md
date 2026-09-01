@@ -230,6 +230,47 @@ cloudsync sync --watch --interval 30
 cloudsync sync --strategy local --verbose
 ```
 
+### 7. P2P Sharing (Sender → Receiver)
+
+Share a file or folder over a temporary HTTP session, then receive it from
+any other machine on the same network:
+
+```bash
+# ── On the sender ─────────────────────────────────────────
+# Share a folder with the LAN (binds 0.0.0.0 so other machines can reach it)
+cloudsync share ./my-folder --host 0.0.0.0 --port 8095 --password "s3cret"
+
+#   🔗 Share Links:
+#      Local:  http://localhost:8095/share/abc12345
+#      Token:  <session-token>          # shown only on the sender console
+
+# ── On the receiver ───────────────────────────────────────
+# Connect with the share URL printed by the sender
+cloudsync fetch http://192.168.1.5:8095/share/abc12345 --password "s3cret" --output ./received
+
+# If the sender used --require-token, also pass the token:
+cloudsync fetch http://192.168.1.5:8095/share/abc12345 --password "s3cret" --token <session-token>
+```
+
+Folder shares are delivered as a ZIP archive; file shares stream the raw
+file. Sessions expire automatically, and every request is rate-limited
+(60 req/min per IP).
+
+---
+
+## 🚪 Exit Codes
+
+Every command reports success or failure through its exit code so scripts
+and CI pipelines can react deterministically:
+
+| Exit code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Failure — invalid arguments, empty staging, unreachable remote, wrong password, expired session, failed extraction, etc. |
+
+Errors are printed to **stderr** (success output goes to stdout), so
+`cloudsync fetch ... > out.log` still surfaces failures in the terminal.
+
 ---
 
 ## 🛠️ Command Reference
@@ -355,10 +396,12 @@ cloudsync sync
 
 ```bash
 cloudsync share [path]
-  --type <type>           # file|folder|session
+  --type <type>           # file|folder|session (folders stream as a ZIP)
   --port <number>         # Server port (default: 3000)
-  --expires <minutes>     # Expiration (default: 60)
-  --password <pwd>         # Password protection
+  --host <addr>           # Bind address (default: 127.0.0.1; use 0.0.0.0 for LAN)
+  --expires <minutes>     # Expiration (default: 60, max: 10080)
+  --password <pwd>        # Password protection (scrypt + salt, timing-safe compare)
+  --require-token         # Require the session token on every request (extra hardening)
   --verbose               # Show details
   --open                  # Auto-open URL
   --profile <name>        # Config profile
@@ -370,8 +413,10 @@ cloudsync share [path]
 cloudsync fetch <url-or-id>
   --host <hostname>       # Remote host (if target is Share ID) (default: 127.0.0.1)
   --port <number>         # Remote port (if target is Share ID) (default: 3000)
-  --password <pwd>         # Password if session is protected
+  --password <pwd>        # Password if session is protected
+  --token <token>         # Session token (required only if share used --require-token)
   --output <path>         # Output directory (default: ./)
+  --timeout <ms>          # HTTP timeout (default: 30000)
   --verbose               # Show download progress
 ```
 
