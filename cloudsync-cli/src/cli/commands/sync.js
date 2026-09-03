@@ -151,7 +151,7 @@ function analyzeChanges(options, verbose) {
   return changes;
 }
 
-function displayChanges(changes, verbose) {
+function displayChanges(changes, _verbose) {
   if (changes.upload.length > 0) {
     console.log(chalk.cyan('\n📤 Files to upload:'));
     changes.upload.forEach(f => {

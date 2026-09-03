@@ -13,7 +13,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import http from 'http';
 import { existsSync, writeFileSync, mkdirSync, statSync } from 'fs';
-import { join, resolve, basename } from 'path';
+import { join, resolve } from 'path';
 import { safeJsonParse } from '../../utils/security.js';
 import { failWith, okWith } from '../../utils/exit.js';
 

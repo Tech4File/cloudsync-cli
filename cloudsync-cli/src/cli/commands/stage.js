@@ -143,7 +143,7 @@ function stageFile(filePath, stagedFiles, stagingDir, verbose, rejectedFiles, or
   }
 }
 
-function showStagedFiles(stagingDir, verbose) {
+function showStagedFiles(stagingDir, _verbose) {
   // Prefer the index mapping (original paths) when present; fall back to
   // the flat directory listing for workspaces staged before the mapping.
   let display = null;

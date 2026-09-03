@@ -15,7 +15,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { existsSync, writeFileSync, mkdirSync, createReadStream, statSync, createWriteStream, rmSync } from 'fs';
+import { existsSync, writeFileSync, mkdirSync, createReadStream, statSync } from 'fs';
 import { join, basename, resolve } from 'path';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import http from 'http';
@@ -137,10 +137,6 @@ const shareCommand = new Command('share')
 
 function generateSessionToken() {
   return randomBytes(24).toString('base64url');
-}
-
-function generateShareUrl(session, port) {
-  return `http://localhost:${port}/share/${session.id}`;
 }
 
 function saveSession(session, verbose) {
@@ -420,7 +416,7 @@ async function startShareServer(session, options, verbose) {
   });
 }
 
-function generateSharePage(session, verbose) {
+function generateSharePage(session, _verbose) {
   const pathName = basename(session.path);
 
   return `<!DOCTYPE html>

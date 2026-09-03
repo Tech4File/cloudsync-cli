@@ -164,7 +164,7 @@ async function downloadWithProtocol(profile, options, verbose) {
     conn.on('ready', () => {
       clearTimeout(timeout);
       if (verbose) console.log(chalk.green('   Connected to SSH server'));
-      conn.sftp((err, sftp) => {
+      conn.sftp((err, _sftp) => {
         if (err) { conn.end(); return reject(err); }
         if (verbose) console.log(chalk.gray('   SFTP session established'));
         conn.end();

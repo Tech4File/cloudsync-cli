@@ -386,7 +386,7 @@ test('Test 8.2: sync --dry-run exits zero (analysis only)', syncDry.code === 0, 
 // 8.3: encrypted v2-stream roundtrip via decryptData (simulates >50MB layout)
 let streamLayoutOk = false;
 try {
-  const { encryptData, decryptData } = await import('./src/core/crypto/index.js');
+  const { decryptData } = await import('./src/core/crypto/index.js');
   // Craft a v2-stream-layout payload: [0x02][salt][iv][ciphertext][tag]
   const { createCipheriv, randomBytes, scryptSync } = await import('crypto');
   const secret = Buffer.from('stream-layout roundtrip payload');

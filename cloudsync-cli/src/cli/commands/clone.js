@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { isValidHost, isValidUsername, sanitizeInput } from '../../utils/security.js';
+import { isValidHost, isValidUsername } from '../../utils/security.js';
 
 const cloneCommand = new Command('clone')
   .description('📥 Clone a remote workspace to local')
