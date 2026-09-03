@@ -88,12 +88,12 @@ class TransportEngine {
 
   // ===== UPLOAD METHODS =====
 
-  async uploadSCP(files, remotePath, profile) {
+  async uploadSCP(_files, _remotePath, profile) {
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
       conn.on('ready', () => {
         this.log('SSH connected, SCP transfer ready');
-        conn.sftp((err, sftp) => {
+        conn.sftp((err, _sftp) => {
           if (err) { conn.end(); return reject(new Error(`SFTP channel failed: ${err.message}`)); }
           this.log('SFTP channel established - real transfer would proceed here');
           conn.end();
@@ -109,11 +109,11 @@ class TransportEngine {
     });
   }
 
-  async uploadSFTP(files, remotePath, profile) {
+  async uploadSFTP(_files, _remotePath, profile) {
     return new Promise((resolve) => {
       const conn = new SSHClient();
       conn.on('ready', () => {
-        conn.sftp((err, sftp) => {
+        conn.sftp((err, _sftp) => {
           if (err) { conn.end(); return resolve({ protocol:'sftp', simulated:true }); }
           this.log('SFTP session with resume, chmod, symlink support');
           conn.end();
@@ -125,7 +125,7 @@ class TransportEngine {
     });
   }
 
-  async uploadRSYNC(files, remotePath, profile) {
+  async uploadRSYNC(files, _remotePath, _profile) {
     this.log('[PLANNED] RSYNC delta: block-level diff, only changed data transferred');
     const totalSize = files.reduce((s,f)=>{try{return s+statSync(f).size}catch(e){return s}},0);
     return { protocol:'rsync', method:'delta-blocks', compression:'built-in-lz4', resume:true,
@@ -133,21 +133,21 @@ class TransportEngine {
       implemented: false, note:'RSYNC protocol is planned — use ssh or hybrid for now' };
   }
 
-  async uploadWS(files, remotePath, profile) {
+  async uploadWS(_files, _remotePath, _profile) {
     this.log('[PLANNED] WebSocket streaming - real-time bidirectional');
     return { protocol:'websocket', method:'message-stream', compression:'per-message-deflate',
       resume:true, realTime:true, bidirectional:true, implemented: false,
       note:'WebSocket protocol is planned — use ssh or hybrid for now' };
   }
 
-  async uploadPipe(files, remotePath, profile) {
+  async uploadPipe(_files, _remotePath, _profile) {
     this.log('[PLANNED] DIRECT PIPE - raw SSH tunnel, no protocol overhead');
     return { protocol:'pipe', method:'direct-tar-stream', compression:'gzip-stream',
       resume:false, throughput:'maximum', overhead:'minimal', implemented: false,
       note:'Direct pipe is planned — use ssh or hybrid for now' };
   }
 
-  async uploadHybrid(files, remotePath, profile) {
+  async uploadHybrid(files, _remotePath, profile) {
     this.log('HYBRID-ZIP - high compression archive mode');
     const cacheDir = join(profile.workspace || process.cwd(), '.cloudsync', 'cache');
     if (!existsSync(cacheDir)) mkdirSync(cacheDir, { recursive:true });
@@ -163,7 +163,7 @@ class TransportEngine {
       compressedSize:aStats.size, compressionRatio:`${ratio}%`, files:files.length };
   }
 
-  async uploadChunked(files, remotePath, profile) {
+  async uploadChunked(files, _remotePath, _profile) {
     const totalSize = files.reduce((s,f)=>{try{return s+statSync(f).size}catch(e){return s}},0);
     const numChunks = Math.ceil(totalSize / this.chunkSize);
     this.log(`[PLANNED] CHUNKED: ${totalSize}B in ${numChunks} chunks of ${this.chunkSize/1024/1024}MB`);
@@ -172,7 +172,7 @@ class TransportEngine {
       note:'Chunked protocol is planned — use ssh or hybrid for now' };
   }
 
-  async uploadHTTP(files, remotePath, profile) {
+  async uploadHTTP(_files, _remotePath, _profile) {
     this.log('[PLANNED] HTTP POST - cloud platform API integration');
     return { protocol:'http', method:'multipart-post', compression:'gzip-content-encoding',
       resume:false, authMethod:'token-or-basic', implemented: false,
@@ -181,27 +181,27 @@ class TransportEngine {
 
   // ===== DOWNLOAD METHODS =====
 
-  async downloadSCP(remotePath, localPath, profile) {
+  async downloadSCP(_remotePath, _localPath, _profile) {
     this.log('[PLANNED] SCP download');
     return { protocol:'scp', direction:'download', implemented: false };
   }
-  async downloadSFTP(remotePath, localPath, profile) {
+  async downloadSFTP(_remotePath, _localPath, _profile) {
     this.log('[PLANNED] SFTP download with resume');
     return { protocol:'sftp', direction:'download', resume:true, implemented: false };
   }
-  async downloadRSYNC(remotePath, localPath, profile) {
+  async downloadRSYNC(_remotePath, _localPath, _profile) {
     this.log('[PLANNED] RSYNC delta download');
     return { protocol:'rsync', direction:'download', delta:true, implemented: false };
   }
-  async downloadWS(remotePath, localPath, profile) {
+  async downloadWS(_remotePath, _localPath, _profile) {
     this.log('[PLANNED] WebSocket download stream');
     return { protocol:'websocket', direction:'download', streaming:true, implemented: false };
   }
-  async downloadPipe(remotePath, localPath, profile) {
+  async downloadPipe(_remotePath, _localPath, _profile) {
     this.log('[PLANNED] Direct pipe download');
     return { protocol:'pipe', direction:'download', implemented: false };
   }
-  async downloadChunked(remotePath, localPath, profile) {
+  async downloadChunked(_remotePath, _localPath, _profile) {
     this.log('[PLANNED] Chunked download with resume');
     return { protocol:'chunked', direction:'download', resume:true, implemented: false };
   }

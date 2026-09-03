@@ -62,7 +62,9 @@ const initCommand = new Command('init')
 
     const host = sanitizeInput(options.host || 'your-server.com', 253);
     const user = sanitizeInput(options.user || process.env.USER || 'user', 32);
-    const port = options.port || 22;
+    // NaN from a non-numeric --port must surface as invalid input, never
+    // silently fall back to 22 (a wrong port would be saved to the profile).
+    const port = Number.isNaN(options.port) ? options.port : (options.port || 22);
     const keyPath = options.key || join(homedir(), '.ssh', 'id_rsa');
     const protocol = options.protocol || 'ssh';
     const workspace = options.workspace || process.cwd();

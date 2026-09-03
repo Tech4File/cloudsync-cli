@@ -55,6 +55,8 @@ function run(cmd, dir = process.cwd(), timeout = 20000) {
 }
 
 // Same as run(), but returns { output, code } so exit codes can be asserted.
+// stdout and stderr are combined so error messages (written to stderr by
+// failWith) are visible to assertions.
 function runWithCode(cmd, dir = process.cwd(), timeout = 20000) {
   try {
     const output = execSync(`node "${CLI_PATH}" ${cmd}`, {
@@ -65,7 +67,7 @@ function runWithCode(cmd, dir = process.cwd(), timeout = 20000) {
     });
     return { output, code: 0 };
   } catch (e) {
-    return { output: e.stdout || e.stderr || e.message, code: e.status ?? 1 };
+    return { output: `${e.stdout || ''}${e.stderr || ''}`, code: e.status ?? 1 };
   }
 }
 
@@ -168,7 +170,7 @@ try {
 // Corrupt the file AFTER committing — a passing rollback must restore it.
 // (Success text alone is not proof; the restored CONTENT is.)
 writeFileSync(join(TEST_DIR, 'data', 'sample.txt'), 'CORRUPTED — rollback must restore this\n');
-const rollbackOut = firstCommitId ? run(`rollback ${firstCommitId}`, TEST_DIR) : '';
+const rollbackOut = firstCommitId ? run(`rollback ${firstCommitId} --force`, TEST_DIR) : '';
 let rollbackRestored = false;
 try {
   rollbackRestored = readFileSync(join(TEST_DIR, 'data', 'sample.txt'), 'utf8') === 'Hello CloudSync Test Payload\nLine 2';
@@ -523,6 +525,56 @@ test('Test 9.5: npm tarball stays under 2 MB (files allowlist enforced)', packSi
 safeRm(ENC_DIR);
 
 // ─────────────────────────────────────────────────────────────
+// STAGE 10: Remote-path honesty & validation regressions
+// (cloud-agent v2026.9.4 findings H1/H3, M1, M2)
+// ─────────────────────────────────────────────────────────────
+console.log('\n── Stage 10: Remote-path honesty & validation regressions ──');
+
+// 10.1: unimplemented upload protocols must exit non-zero and say so (H3)
+const S10_DIR = join(__dirname, 'tmp-stage10');
+safeRm(S10_DIR);
+mkdirSync(join(S10_DIR, '.cloudsync'), { recursive: true });
+writeFileSync(join(S10_DIR, '.cloudsync', 'config.json'), JSON.stringify({
+  profiles: { default: { host: '127.0.0.1', user: 'test', port: 22, key: '', workspace: S10_DIR } },
+  settings: { defaultProfile: 'default' }
+}));
+writeFileSync(join(S10_DIR, 'file.txt'), 'stage 10 payload');
+
+const plannedUpload = runWithCode('upload --protocol rsync --message planned', S10_DIR, 30000);
+const plannedRejected = plannedUpload.code !== 0 &&
+  plannedUpload.output.includes('not implemented');
+test('Test 10.1: Unimplemented upload protocol (rsync) exits 1 with explicit message', plannedRejected,
+  `code=${plannedUpload.code}\n${plannedUpload.output}`);
+
+// 10.2: download from an unreachable remote must exit 1 (H1 honesty path)
+const unreachableDownload = runWithCode('download --latest', S10_DIR, 20000);
+test('Test 10.2: Unreachable remote download exits 1 with an error', unreachableDownload.code !== 0,
+  `code=${unreachableDownload.code}\n${unreachableDownload.output}`);
+
+// 10.3: init --port abc must be rejected (M1 — NaN previously became 22)
+const S10_INIT = join(__dirname, 'tmp-stage10-init');
+safeRm(S10_INIT);
+mkdirSync(S10_INIT, { recursive: true });
+const badPortInit = runWithCode('init --port abc --host 127.0.0.1', S10_INIT, 20000);
+test('Test 10.3: init --port abc is rejected (NaN never silently saved)', badPortInit.code !== 0,
+  `code=${badPortInit.code}\n${badPortInit.output}`);
+
+// 10.4: init --port 2222 still succeeds (guard does not over-reject)
+const goodPortInit = runWithCode('init --port 2222 --host 127.0.0.1', S10_INIT, 20000);
+test('Test 10.4: init --port 2222 still succeeds', goodPortInit.code === 0,
+  `code=${goodPortInit.code}\n${goodPortInit.output}`);
+
+// 10.5: port command must not claim success for an uncreated tunnel (M2)
+const portProbe = runWithCode('port 8090:80', S10_INIT, 20000);
+const portHonest = portProbe.code !== 0 && !portProbe.output.includes('tunnel configuration ready');
+test('Test 10.5: port command fails honestly instead of printing tunnel-ready', portHonest,
+  `code=${portProbe.code}\n${portProbe.output}`);
+
+// Teardown Stage-10 workspaces
+safeRm(S10_DIR);
+safeRm(S10_INIT);
+
+// ─────────────────────────────────────────────────────────────
 // CLEANUP & SUMMARY
 // ─────────────────────────────────────────────────────────────
 // Teardown test workspace
@@ -536,7 +588,7 @@ console.log(`   📈 Total:  ${passed + failed}`);
 console.log('━'.repeat(65));
 
 if (failed === 0) {
-  console.log(`\nAll ${passed} tests across all 9 stages passed! CLI is production ready.`);
+  console.log(`\nAll ${passed} tests across all 10 stages passed! CLI is production ready.`);
   console.log('Next: run "node test-integration.js" for the end-to-end share -> fetch test.\n');
   process.exit(0);
 } else {

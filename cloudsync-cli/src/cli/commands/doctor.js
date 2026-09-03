@@ -68,7 +68,7 @@ function checkNodeVersion() {
   };
 }
 
-function checkCloudSync(verbose) {
+function checkCloudSync(_verbose) {
   try {
     // Check if .cloudsync directory exists
     const cloudsyncPath = join(process.cwd(), '.cloudsync');
@@ -88,7 +88,7 @@ function checkCloudSync(verbose) {
   }
 }
 
-function checkConfiguration(verbose) {
+function checkConfiguration(_verbose) {
   const configPath = join(process.cwd(), '.cloudsync', 'config.json');
   
   if (!existsSync(configPath)) {
@@ -118,7 +118,7 @@ function checkConfiguration(verbose) {
   }
 }
 
-function checkSSHKey(verbose) {
+function checkSSHKey(_verbose) {
   const sshDir = join(homedir(), '.ssh');
   const commonKeys = ['id_ed25519', 'id_rsa', 'id_ecdsa'];
   
@@ -132,7 +132,7 @@ function checkSSHKey(verbose) {
   };
 }
 
-function checkWritePermissions(verbose) {
+function checkWritePermissions(_verbose) {
   const testDir = join(process.cwd(), '.cloudsync');
   const testFile = join(testDir, '.doctor-test');
   
@@ -154,7 +154,7 @@ function checkWritePermissions(verbose) {
   }
 }
 
-function checkDiskSpace(verbose) {
+function checkDiskSpace(_verbose) {
   try {
     // Use statfsSync if available (Node 18.15+)
     if (typeof statfsSync === 'function') {
@@ -184,7 +184,7 @@ function checkDiskSpace(verbose) {
   }
 }
 
-function checkMemory(verbose) {
+function checkMemory(_verbose) {
   const freeGB = (freemem() / (1024 ** 3)).toFixed(2);
   const totalGB = (totalmem() / (1024 ** 3)).toFixed(2);
   return {
@@ -194,7 +194,7 @@ function checkMemory(verbose) {
   };
 }
 
-function checkSystemTools(verbose) {
+function checkSystemTools(_verbose) {
   const tools = [];
   const missing = [];
 
@@ -223,7 +223,7 @@ function checkSystemTools(verbose) {
   };
 }
 
-async function checkSSHConnectivity(verbose) {
+async function checkSSHConnectivity(_verbose) {
   const configPath = join(process.cwd(), '.cloudsync', 'config.json');
   if (!existsSync(configPath)) {
     return {

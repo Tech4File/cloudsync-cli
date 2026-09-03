@@ -2,14 +2,15 @@
  * download.js - Download files from remote with version control
  *
  * Versioned downloads (--version / --latest) are restored from the local
- * commit archive when available. Otherwise the transfer goes over SSH/SFTP
- * to the configured profile host. Connection failures exit non-zero.
+ * commit archive when available. Otherwise the remote upload directory is
+ * listed over SFTP and its archives are pulled and extracted. Every path
+ * exits non-zero on failure so scripts can detect a failed download.
  */
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { readFileSync, existsSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, existsSync, writeFileSync, createWriteStream, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { logOperation } from '../../utils/logger.js';
 import { safeJsonParse } from '../../utils/security.js';
@@ -116,14 +117,21 @@ const downloadCommand = new Command('download')
       }
     }
 
-    // Remote download attempt
+    // Remote download: list the remote upload directory and pull every archive
     console.log(chalk.cyan('\nDownloading from remote...'));
 
     try {
-      await downloadWithProtocol(profile, options, verbose);
-      logOperation('download', `Downloaded files from ${profile.host}`);
-      console.log(chalk.green('\nDownload complete!'));
-      updateLocalStatus(verbose);
+      const result = await downloadWithProtocol(profile, options, verbose);
+      if (result.files && result.files.length > 0) {
+        logOperation('download', `Downloaded ${result.files.length} archive(s) from ${profile.host}`);
+        console.log(chalk.green(`\nDownload complete! ${result.files.length} archive(s) restored.`));
+        updateLocalStatus(verbose);
+      } else {
+        failWith(
+          `Remote upload directory is empty — nothing to download. ` +
+          'Upload first with: cloudsync upload'
+        );
+      }
     } catch (error) {
       failWith(`Download failed: ${error.message}`);
       if (verbose) console.error(error.stack);
@@ -145,6 +153,7 @@ async function downloadWithProtocol(profile, options, verbose) {
   const host = profile.host;
   const port = profile.port || 22;
   const username = profile.user;
+  const outputDir = options.output || process.cwd();
 
   if (verbose) console.log(chalk.gray(`\nConnecting to ${username}@${host}:${port}`));
 
@@ -164,11 +173,48 @@ async function downloadWithProtocol(profile, options, verbose) {
     conn.on('ready', () => {
       clearTimeout(timeout);
       if (verbose) console.log(chalk.green('   Connected to SSH server'));
-      conn.sftp((err, _sftp) => {
-        if (err) { conn.end(); return reject(err); }
+      conn.sftp(async (sftpErr, sftp) => {
+        if (sftpErr) { conn.end(); return reject(sftpErr); }
         if (verbose) console.log(chalk.gray('   SFTP session established'));
-        conn.end();
-        resolve();
+
+        // Resolve the remote upload dir, expanding "~" to the remote home
+        const remotePath = profile.path || '~/.cloudsync/uploads';
+        const remoteDir = await sftpRealpath(sftp, remotePath);
+        if (verbose) console.log(chalk.gray(`   Remote directory: ${remoteDir}`));
+
+        try {
+          const downloaded = [];
+          const archives = await sftpListDir(sftp, remoteDir);
+          const zipFiles = archives.filter(f => f.isFile && f.name.endsWith('.zip'));
+
+          if (zipFiles.length === 0) {
+            conn.end();
+            return resolve({ files: [] });
+          }
+
+          for (const entry of zipFiles) {
+            const remoteFile = `${remoteDir}/${entry.name}`;
+            const localFile = join(outputDir, entry.name);
+            await sftpReadFile(sftp, remoteFile, localFile, verbose);
+            downloaded.push(entry.name);
+            if (verbose) console.log(chalk.gray(`   Pulled: ${entry.name}`));
+
+            // Extract the archive into the output directory so files are restored
+            try {
+              const { VersionControl } = await import('../../core/vcs/index.js');
+              const vcs = new VersionControl();
+              vcs.extractArchive(localFile, outputDir);
+            } catch (e) {
+              if (verbose) console.log(chalk.yellow(`   Extraction skipped for ${entry.name}: ${e.message}`));
+            }
+          }
+
+          conn.end();
+          resolve({ files: downloaded });
+        } catch (e) {
+          conn.end();
+          reject(new Error(`Remote listing failed: ${e.message}`));
+        }
       });
     });
 
@@ -185,6 +231,54 @@ async function downloadWithProtocol(profile, options, verbose) {
       clearTimeout(timeout);
       reject(new Error(`SSH connect failed: ${e.message}`));
     }
+  });
+}
+
+/**
+ * Resolve a remote path to an absolute one, expanding a leading "~"
+ * via the SFTP start directory (the remote user's home).
+ */
+function sftpRealpath(sftp, remotePath) {
+  return new Promise((resolve, reject) => {
+    const resolved = (base) => {
+      if (!remotePath.startsWith('~')) {
+        return resolve(remotePath.startsWith('/') ? remotePath : `${base}/${remotePath}`);
+      }
+      resolve(remotePath.replace(/^~(?=\/|$)/, base));
+    };
+    sftp.realpath('.', (err, base) => {
+      if (err) return reject(err);
+      resolved(base);
+    });
+  });
+}
+
+/** List a remote directory; resolves [] when it does not exist yet. */
+function sftpListDir(sftp, remoteDir) {
+  return new Promise((resolve, reject) => {
+    sftp.readdir(remoteDir, (err, list) => {
+      if (err && (err.code === 2 || err.code === 4)) return resolve([]);
+      if (err) return reject(err);
+      resolve(list.map(e => ({ name: e.filename, isFile: !e.longname.startsWith('d') })));
+    });
+  });
+}
+
+/** Stream a single remote file to a local path over SFTP. */
+function sftpReadFile(sftp, remoteFile, localFile, verbose) {
+  return new Promise((resolve, reject) => {
+    mkdirSync(dirname(localFile), { recursive: true });
+    const writeStream = createWriteStream(localFile);
+    const readStream = sftp.createReadStream(remoteFile);
+    let transferred = 0;
+    readStream.on('data', (chunk) => { transferred += chunk.length; });
+    writeStream.on('close', () => {
+      if (verbose) console.log(chalk.green(`   Transfer complete: ${(transferred / 1024).toFixed(1)} KB`));
+      resolve(transferred);
+    });
+    writeStream.on('error', reject);
+    readStream.on('error', reject);
+    readStream.pipe(writeStream);
   });
 }
 

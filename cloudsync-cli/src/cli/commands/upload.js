@@ -142,15 +142,22 @@ const uploadCommand = new Command('upload')
       return;
     }
 
+    // Unimplemented transports must fail honestly: the CLI never reports
+    // success for a transfer that did not actually happen.
+    if (uploadResult && uploadResult.implemented === false) {
+      failWith(
+        `${options.protocol} transfer is not implemented yet — ${filesToUpload.length} file(s) were NOT uploaded. ` +
+        `Use --protocol ssh, scp, or sftp for a real transfer. (Local archive kept at ${archivePath})`
+      );
+      return;
+    }
+
     logOperation('upload', `Uploaded ${filesToUpload.length} files via ${options.protocol}`,
       { files: filesToUpload.map(f => relative(workspace, f)), versionId, protocol: options.protocol });
 
     console.log(chalk.green('\nUpload complete!'));
     console.log(chalk.gray(`   Version: ${versionId}`));
     console.log(chalk.gray(`   Files: ${filesToUpload.length}`));
-    if (uploadResult && uploadResult.implemented === false) {
-      console.log(chalk.yellow(`   Note: ${options.protocol} is planned — archive saved locally at ${archivePath}`));
-    }
   });
 
 function collectFiles(dir, specificFiles, excludePatterns, includePatterns, verbose) {
@@ -264,7 +271,6 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
   const username = profile.user;
   const keyPath = profile.key || join(homedir(), '.ssh', 'id_rsa');
   const remotePath = profile.path || '~/.cloudsync/uploads';
-  const remoteFile = `${remotePath}/${basename(archivePath)}`;
 
   if (verbose) console.log(chalk.gray(`\nConnecting to ${username}@${host}:${port}`));
 
@@ -278,12 +284,16 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
 
         // Create the remote directory over SFTP only — never via a shell
         // command — so a tampered profile `path` can't inject shell syntax.
+        // `~` is expanded first, and the write target is built from the
+        // expanded directory so SFTP never receives a literal `~`.
+        let remoteDir;
         try {
-          await sftpMkdirp(sftp, remotePath, verbose);
+          remoteDir = await sftpMkdirp(sftp, remotePath, verbose);
         } catch (e) {
           conn.end();
           return reject(new Error(`Remote mkdir failed: ${e.message}`));
         }
+        const remoteFile = `${remoteDir}/${basename(archivePath)}`;
 
         if (verbose) console.log(chalk.gray(`   SFTP channel open, uploading to ${remoteFile}`));
 
@@ -322,6 +332,7 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
  * so the profile `path` value can never be interpreted as shell syntax.
  * Missing parents are created segment by segment; existing dirs are skipped.
  * A leading "~" is expanded via sftp.realpath(".") (the remote home dir).
+ * Resolves with the fully-expanded absolute remote directory path.
  */
 function sftpMkdirp(sftp, remotePath, verbose) {
   return new Promise((resolve, reject) => {
@@ -330,7 +341,7 @@ function sftpMkdirp(sftp, remotePath, verbose) {
       let built = basePath;
 
       const next = () => {
-        if (segments.length === 0) return resolve();
+        if (segments.length === 0) return resolve(built);
         built = built.endsWith('/') ? `${built}${segments.shift()}` : `${built}/${segments.shift()}`;
         if (verbose) console.log(chalk.gray(`   mkdir: ${built}`));
         sftp.mkdir(built, (err) => {

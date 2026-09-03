@@ -51,7 +51,7 @@ const historyCommand = new Command('history')
     }
   });
 
-function displayTableHistory(history, fileFilter, verbose) {
+function displayTableHistory(history, _fileFilter, _verbose) {
   console.log();
   
   // Header
@@ -85,7 +85,7 @@ function displayShortHistory(history) {
   }
 }
 
-function displayJsonHistory(history, fileFilter) {
+function displayJsonHistory(history, _fileFilter) {
   console.log(JSON.stringify(history, null, 2));
 }
 

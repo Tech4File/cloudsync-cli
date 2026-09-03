@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { safeJsonParse, isValidPort, isValidHost } from '../../utils/security.js';
+import { failWith, okWith } from '../../utils/exit.js';
 
 const portCommand = new Command('port')
   .description('🔌 Create SSH tunnel/port forwarding')
@@ -12,6 +13,7 @@ const portCommand = new Command('port')
   .option('--background', 'Run tunnel in background', false)
   .option('--profile <name>', 'Config profile to use', 'default')
   .action(async (mapping, options) => {
+    okWith();
     const verbose = options.verbose || process.argv.includes('--verbose');
     const configPath = join(process.cwd(), '.cloudsync', 'config.json');
     
@@ -64,20 +66,18 @@ const portCommand = new Command('port')
     }
 
     // Create SSH tunnel
-    await createTunnel(profile, localPort, remotePort, options.host, verbose, options.background);
+    await createTunnel(profile, localPort, remotePort);
   });
 
-async function createTunnel(profile, localPort, remotePort, bindHost, verbose, background) {
-  console.log(chalk.green('\n✅ SSH tunnel configuration ready!'));
-  console.log(chalk.cyan('\n🌐 Tunnel Information:'));
-  console.log(chalk.white(`   Local:  ${chalk.cyan(`http://localhost:${localPort}`)}`));
-  console.log(chalk.white(`   Remote: ${chalk.cyan(`${profile.host}:${remotePort}`)}`));
-  console.log(chalk.gray('\n   Forwarding: localhost:' + localPort + ' <-> ' + profile.host + ':' + remotePort));
-  
-  console.log(chalk.yellow('\n⚠️ SSH tunnel demo mode'));
-  console.log(chalk.gray('   Tunnel command that would run:'));
-  console.log(chalk.cyan(`   ssh -L ${localPort}:localhost:${remotePort} ${profile.user}@${profile.host} -p ${profile.port || 22}`));
-  console.log(chalk.cyan(`   ssh -R ${remotePort}:localhost:${localPort} ${profile.user}@${profile.host} -p ${profile.port || 22}`));
+async function createTunnel(profile, localPort, remotePort) {
+  // Live tunneling is not implemented yet — fail honestly instead of
+  // printing a success banner for a tunnel that was never created.
+  const sshPort = profile.port || 22;
+  failWith(
+    `SSH tunnel is not implemented yet — no tunnel was created for localhost:${localPort} <-> ${profile.host}:${remotePort}. ` +
+    'Create it manually with: ' +
+    `ssh -L ${localPort}:localhost:${remotePort} ${profile.user}@${profile.host} -p ${sshPort}`
+  );
 }
 
 export default portCommand;

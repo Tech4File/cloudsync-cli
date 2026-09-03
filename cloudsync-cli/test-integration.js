@@ -8,7 +8,7 @@
  * suite in test.js by exercising the real network workflow.
  */
 import { spawn } from 'child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync, existsSync, mkdirSync } from 'fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createHash } from 'crypto';
@@ -188,9 +188,15 @@ function httpGet(url, timeoutMs = 3000) {
   if (traRes.code === 1) ok('Path traversal rejection -> exit code 1');
   else bad('Path traversal NOT rejected', `code=${traRes.code}\n${traRes.stdout}`);
 
-  // Cleanup
-  shareProc.kill('SIGINT');
-  await sleep(500);
+  // Cleanup — kill the share process and wait for the OS to release the
+  // port. SIGINT can be ignored on Windows, so we escalate to SIGKILL if
+  // the process is still alive after the grace period.
+  try { shareProc.kill('SIGINT'); } catch (_) { }
+  for (let i = 0; i < 10; i++) {
+    await sleep(100);
+    if (shareProc.exitCode !== null) break;
+    if (i === 4) { try { shareProc.kill('SIGKILL'); } catch (_) { } }
+  }
   try { rmSync(WORKSPACE, { recursive: true, force: true }); } catch (_) { }
 
   console.log('\n=== Summary ===');

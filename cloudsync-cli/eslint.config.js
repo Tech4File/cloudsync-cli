@@ -1,6 +1,9 @@
 export default [
   {
-    files: ['src/**/*.js', 'bin/**/*.js', 'scripts/**/*.mjs', 'test.js'],
+    ignores: ['dist/**', 'node_modules/**']
+  },
+  {
+    files: ['src/**/*.js', 'bin/**/*.js', 'scripts/**/*.mjs', 'test.js', 'test-integration.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module'
