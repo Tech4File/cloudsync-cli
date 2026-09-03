@@ -1,13 +1,17 @@
 /**
  * sync.js - Bidirectional synchronization with conflict resolution
+ *
+ * The remote transfer engine is not implemented yet, so a real sync run
+ * reports the pending changes and exits non-zero instead of pretending
+ * files were transferred. Dry-run mode (local analysis only) is fully
+ * functional and exits zero.
  */
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { readFileSync, existsSync, writeFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
-import { logOperation } from '../../utils/logger.js';
-import { sleep } from '../../utils/helpers.js';
+import { okWith, failWith } from '../../utils/exit.js';
 import { safeJsonParse } from '../../utils/security.js';
 
 
@@ -22,19 +26,20 @@ const syncCommand = new Command('sync')
   .option('--include <patterns>', 'Files to sync (comma-separated)')
   .option('--exclude <patterns>', 'Files to exclude (comma-separated)', 'node_modules,.git')
   .action(async (options) => {
+    okWith();
     const verbose = options.verbose || process.argv.includes('--verbose');
     const configPath = join(process.cwd(), '.cloudsync', 'config.json');
-    
+
     if (!existsSync(configPath)) {
-      console.log(chalk.red('❌ Not initialized. Run: cloudsync init'));
+      failWith('Not initialized. Run: cloudsync init');
       return;
     }
 
     const config = safeJsonParse(readFileSync(configPath, 'utf8'), {});
     const profile = config.profiles[options.profile] || config.profiles[config.settings.defaultProfile];
-    
+
     if (!profile) {
-      console.log(chalk.red(`❌ Profile '${options.profile}' not found`));
+      failWith(`Profile '${options.profile}' not found`);
       return;
     }
 
@@ -54,54 +59,35 @@ const syncCommand = new Command('sync')
       console.log(chalk.gray(`   Exclude: ${options.exclude}`));
     }
 
-    if (options.dryRun) {
-      console.log(chalk.yellow('\n🔍 Dry run mode - analyzing changes...'));
-      const changes = analyzeChanges(options, verbose);
-      displayChanges(changes, verbose);
-      return;
-    }
-
-    // Perform initial sync
+    // Analyze the local workspace
     console.log(chalk.cyan('\n🔍 Analyzing workspace...'));
     const changes = analyzeChanges(options, verbose);
-    
-    if (changes.upload.length === 0 && changes.download.length === 0) {
-      console.log(chalk.green('\n✅ Workspace already in sync'));
+    displayChanges(changes, verbose);
+
+    if (options.dryRun) {
+      console.log(chalk.yellow('\n🔍 Dry run — analysis only, nothing was transferred.'));
       return;
     }
 
-    displayChanges(changes, verbose);
-
-    // Upload local changes
-    if (changes.upload.length > 0) {
-      console.log(chalk.cyan(`\n⬆️ Uploading ${changes.upload.length} changed files...`));
-      await performUpload(changes.upload, profile, options, verbose);
+    if (changes.upload.length === 0 && changes.download.length === 0 && changes.conflicts.length === 0) {
+      console.log(chalk.green('\n✅ No pending changes — nothing to sync.'));
+      return;
     }
 
-    // Download remote changes
-    if (changes.download.length > 0) {
-      console.log(chalk.cyan(`\n⬇️ Downloading ${changes.download.length} changed files...`));
-      await performDownload(changes.download, profile, options, verbose);
-    }
-
-    // Handle conflicts
-    if (changes.conflicts.length > 0) {
-      console.log(chalk.yellow(`\n⚠️ ${changes.conflicts.length} conflicts detected`));
-      await resolveConflicts(changes.conflicts, options.strategy, verbose);
-    }
-
-    logOperation('sync', `Synced ${changes.upload.length} up / ${changes.download.length} down`);
-    console.log(chalk.green('\n✅ Sync complete!'));
-    
-    // Update sync status
-    updateSyncStatus(changes, verbose);
+    // The remote transfer engine is not implemented yet. Report honestly
+    // and exit non-zero so scripts/CI never mistake this for a real sync.
+    failWith(
+      `Remote sync is not implemented yet — ${changes.upload.length} pending upload(s), ` +
+      `${changes.download.length} pending download(s) were NOT transferred. ` +
+      'Use "cloudsync sync --dry-run" for analysis, or upload/download explicitly.'
+    );
   });
 
 function analyzeChanges(options, verbose) {
   const workspace = process.cwd();
   const excludePatterns = options.exclude.split(',').map(p => p.trim());
   const includePatterns = options.include ? options.include.split(',').map(p => p.trim()) : null;
-  
+
   const changes = {
     upload: [],
     download: [],
@@ -111,14 +97,14 @@ function analyzeChanges(options, verbose) {
 
   function scanDirectory(dir, baseDir = dir) {
     if (!existsSync(dir)) return;
-    
+
     try {
       const entries = readdirSync(dir, { withFileTypes: true });
-      
+
       for (const entry of entries) {
         const fullPath = join(dir, entry.name);
         const relPath = relative(baseDir, fullPath);
-        
+
         // Skip hidden directories except .cloudsync
         if (entry.name === '.cloudsync' || entry.name === '.git') {
           continue;
@@ -138,7 +124,7 @@ function analyzeChanges(options, verbose) {
               continue;
             }
           }
-          
+
           const fileStat = statSync(fullPath);
           changes.upload.push({
             path: fullPath,
@@ -189,66 +175,6 @@ function displayChanges(changes, verbose) {
   }
 }
 
-async function performUpload(files, profile, options, verbose) {
-  if (verbose) console.log(chalk.gray('\n🚀 Starting upload...'));
-  
-  // Simulate upload
-  for (const file of files) {
-    if (verbose) console.log(chalk.gray(`   Uploading: ${file.relative}`));
-    await sleep(100);
-  }
-  
-  console.log(chalk.green(`   ✅ ${files.length} files uploaded`));
-}
-
-async function performDownload(files, profile, options, verbose) {
-  if (verbose) console.log(chalk.gray('\n🚀 Starting download...'));
-  
-  // Simulate download
-  for (const file of files) {
-    if (verbose) console.log(chalk.gray(`   Downloading: ${file.relative}`));
-    await sleep(100);
-  }
-  
-  console.log(chalk.green(`   ✅ ${files.length} files downloaded`));
-}
-
-async function resolveConflicts(conflicts, strategy, verbose) {
-  console.log(chalk.cyan('\n🔧 Resolving conflicts...'));
-  
-  switch (strategy.toLowerCase()) {
-    case 'local':
-      console.log(chalk.gray('   Using local versions'));
-      break;
-    case 'remote':
-      console.log(chalk.gray('   Using remote versions'));
-      break;
-    case 'manual':
-      console.log(chalk.yellow('   Manual resolution required'));
-      conflicts.forEach(f => {
-        console.log(chalk.gray(`      - ${f}`));
-      });
-      break;
-  }
-}
-
-function updateSyncStatus(changes, verbose) {
-  const statusFile = join(process.cwd(), '.cloudsync', 'status.json');
-  const status = {
-    lastSync: new Date().toISOString(),
-    lastAction: 'sync',
-    changes: {
-      uploaded: changes.upload.length,
-      downloaded: changes.download.length,
-      conflicts: changes.conflicts.length
-    },
-    pendingChanges: changes.upload.length > 0
-  };
-  
-  writeFileSync(statusFile, JSON.stringify(status, null, 2));
-  
-  if (verbose) console.log(chalk.gray('Sync status updated'));
-}
 
 
 

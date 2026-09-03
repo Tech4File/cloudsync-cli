@@ -273,32 +273,34 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
 
     conn.on('ready', () => {
       if (verbose) console.log(chalk.gray('   Connected to SSH server'));
-      conn.exec(`mkdir -p ${remotePath}`, (err, stream) => {
-        if (err) { conn.end(); return reject(new Error(`Remote mkdir failed: ${err.message}`)); }
+      conn.sftp(async (sftpErr, sftp) => {
+        if (sftpErr) { conn.end(); return reject(new Error(`SFTP channel failed: ${sftpErr.message}`)); }
 
-        stream.on('close', () => {
-          conn.sftp((sftpErr, sftp) => {
-            if (sftpErr) { conn.end(); return reject(new Error(`SFTP channel failed: ${sftpErr.message}`)); }
+        // Create the remote directory over SFTP only — never via a shell
+        // command — so a tampered profile `path` can't inject shell syntax.
+        try {
+          await sftpMkdirp(sftp, remotePath, verbose);
+        } catch (e) {
+          conn.end();
+          return reject(new Error(`Remote mkdir failed: ${e.message}`));
+        }
 
-            if (verbose) console.log(chalk.gray(`   SFTP channel open, uploading to ${remoteFile}`));
+        if (verbose) console.log(chalk.gray(`   SFTP channel open, uploading to ${remoteFile}`));
 
-            const readStream = createReadStream(archivePath);
-            const writeStream = sftp.createWriteStream(remoteFile);
+        const readStream = createReadStream(archivePath);
+        const writeStream = sftp.createWriteStream(remoteFile);
 
-            let transferred = 0;
-            readStream.on('data', (chunk) => { transferred += chunk.length; });
+        let transferred = 0;
+        readStream.on('data', (chunk) => { transferred += chunk.length; });
 
-            writeStream.on('close', () => {
-              if (verbose) console.log(chalk.green(`   Transfer complete: ${(transferred / 1024).toFixed(1)} KB`));
-              conn.end();
-              resolve({ transferred });
-            });
-
-            writeStream.on('error', (e) => { conn.end(); reject(new Error(`SFTP write failed: ${e.message}`)); });
-            readStream.pipe(writeStream);
-          });
+        writeStream.on('close', () => {
+          if (verbose) console.log(chalk.green(`   Transfer complete: ${(transferred / 1024).toFixed(1)} KB`));
+          conn.end();
+          resolve({ transferred });
         });
-        stream.stderr.on('data', () => { });
+
+        writeStream.on('error', (e) => { conn.end(); reject(new Error(`SFTP write failed: ${e.message}`)); });
+        readStream.pipe(writeStream);
       });
     });
 
@@ -311,6 +313,49 @@ async function uploadWithProtocol(profile, archivePath, options, verbose) {
       conn.connect({ host, port, username, privateKey, readyTimeout: 30000, keepaliveInterval: 10000 });
     } catch (e) {
       reject(new Error(`SSH connect failed: ${e.message}`));
+    }
+  });
+}
+
+/**
+ * Recursively create a remote directory over pure SFTP — no shell involved,
+ * so the profile `path` value can never be interpreted as shell syntax.
+ * Missing parents are created segment by segment; existing dirs are skipped.
+ * A leading "~" is expanded via sftp.realpath(".") (the remote home dir).
+ */
+function sftpMkdirp(sftp, remotePath, verbose) {
+  return new Promise((resolve, reject) => {
+    const build = (basePath) => {
+      const segments = remotePath.split('/').filter(seg => seg && seg !== '~');
+      let built = basePath;
+
+      const next = () => {
+        if (segments.length === 0) return resolve();
+        built = built.endsWith('/') ? `${built}${segments.shift()}` : `${built}/${segments.shift()}`;
+        if (verbose) console.log(chalk.gray(`   mkdir: ${built}`));
+        sftp.mkdir(built, (err) => {
+          // Ignore "already exists" — the goal is just for the dir to exist
+          if (err && err.code !== 4 && err.code !== 11) return reject(err);
+          next();
+        });
+      };
+
+      next();
+    };
+
+    if (remotePath.startsWith('~')) {
+      sftp.realpath('.', (err, home) => {
+        if (err) return reject(err);
+        build(home);
+      });
+    } else if (remotePath.startsWith('/')) {
+      build('/');
+    } else {
+      // Relative path — resolve against the SFTP start directory
+      sftp.realpath('.', (err, home) => {
+        if (err) return reject(err);
+        build(home);
+      });
     }
   });
 }

@@ -11,13 +11,15 @@
  * - Stage 5: Developer UX, Scaffolding & Platform Installers
  * - Stage 6: Threat Modeling & Security Hardening Verification
  * - Stage 7: Exit-Code Contract & Error-Path Verification
+ * - Stage 8: External-Agent Report Regression (5 blocking fixes)
+ * - Stage 9: Encrypted Lifecycle E2E & Package Integrity Gates
  *
  * A separate end-to-end network test (share -> fetch) lives in
  * test-integration.js and is executed by `npm test` after this suite.
  */
 
 import { execSync } from 'child_process';
-import { existsSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -85,6 +87,21 @@ function test(name, condition, details = '') {
   }
 }
 
+// HARNESS CANARY — verifies the suite is capable of FAILING.
+// If this ever fails, every other green result is meaningless.
+{
+  const canaryPassedBefore = passed, canaryFailedBefore = failed;
+  test('HARNESS CANARY: test() records failures (self-check)', false);
+  const canaryWorked = failed === canaryFailedBefore + 1 && passed === canaryPassedBefore;
+  // Roll the canary back out of the visible counts
+  failed = canaryFailedBefore;
+  if (!canaryWorked) {
+    console.error('\n!!! TEST HARNESS BROKEN: test() cannot record failures — aborting !!!\n');
+    process.exit(78); // EX_CONFIG: the harness itself is broken
+  }
+  console.log('   (canary fired correctly — harness is sound)');
+}
+
 // ─────────────────────────────────────────────────────────────
 // STAGE 1: CORE CLI & COMMAND ROUTING ENGINE
 // ─────────────────────────────────────────────────────────────
@@ -141,14 +158,22 @@ run('commit "Test second commit"', TEST_DIR);
 const diffOut = run('diff', TEST_DIR);
 test('Test 2.8: Commit Diff Comparison (diff)', diffOut.includes('CloudSync Diff') && diffOut.includes('Summary'), diffOut);
 
-let commitId = null;
+let firstCommitId = null;
 try {
   const historyIndex = JSON.parse(readFileSync(join(TEST_DIR, '.cloudsync', 'history', 'index.json'), 'utf8'));
-  if (historyIndex.length > 0) commitId = historyIndex[0].id;
+  // The FIRST commit contains data/sample.txt (staged before any unstage)
+  if (historyIndex.length > 0) firstCommitId = historyIndex[historyIndex.length - 1].id;
 } catch (e) { }
 
-const rollbackOut = commitId ? run(`rollback ${commitId}`, TEST_DIR) : '';
-test('Test 2.9: Version Rollback (rollback)', rollbackOut.includes('Rollback complete'), rollbackOut);
+// Corrupt the file AFTER committing — a passing rollback must restore it.
+// (Success text alone is not proof; the restored CONTENT is.)
+writeFileSync(join(TEST_DIR, 'data', 'sample.txt'), 'CORRUPTED — rollback must restore this\n');
+const rollbackOut = firstCommitId ? run(`rollback ${firstCommitId}`, TEST_DIR) : '';
+let rollbackRestored = false;
+try {
+  rollbackRestored = readFileSync(join(TEST_DIR, 'data', 'sample.txt'), 'utf8') === 'Hello CloudSync Test Payload\nLine 2';
+} catch (_) { }
+test('Test 2.9: Rollback restores byte-identical content (rollback)', rollbackOut.includes('Rollback complete') && rollbackRestored, `${rollbackOut}\n   file restored: ${rollbackRestored}`);
 
 const logOut = run('log', TEST_DIR);
 test('Test 2.10: Operation Logs (log)', logOut.includes('CloudSync Logs') || logOut.includes('No log entries'), logOut);
@@ -338,6 +363,166 @@ test('Test 7.8: Unreachable share exits non-zero (fetch)', deadFetch.code !== 0,
 safeRm(ERR_DIR);
 
 // ─────────────────────────────────────────────────────────────
+// STAGE 8: AGENT-REPORT REGRESSION TESTS (the 5 blocking fixes)
+// ─────────────────────────────────────────────────────────────
+console.log('\n[Stage 8] Agent-Report Regression: 5 Blocking Fixes');
+console.log('─'.repeat(60));
+
+const FIX_DIR = join(__dirname, 'test-workspace-fixes');
+safeRm(FIX_DIR);
+mkdirSync(FIX_DIR, { recursive: true });
+
+// 8.1: sync with pending changes must NOT claim success — exit non-zero
+run('init --host testserver.local --user admin --force', FIX_DIR);
+writeFileSync(join(FIX_DIR, 'a.txt'), 'pending change');
+const syncPending = runWithCode('sync', FIX_DIR);
+const syncHonest = syncPending.code !== 0 && !/files uploaded/i.test(syncPending.output);
+test('Test 8.1: sync exits non-zero and never claims uploads (sync)', syncHonest, syncPending.output);
+
+// 8.2: sync --dry-run is honest analysis — exits zero
+const syncDry = runWithCode('sync --dry-run', FIX_DIR);
+test('Test 8.2: sync --dry-run exits zero (analysis only)', syncDry.code === 0, syncDry.output);
+
+// 8.3: encrypted v2-stream roundtrip via decryptData (simulates >50MB layout)
+let streamLayoutOk = false;
+try {
+  const { encryptData, decryptData } = await import('./src/core/crypto/index.js');
+  // Craft a v2-stream-layout payload: [0x02][salt][iv][ciphertext][tag]
+  const { createCipheriv, randomBytes, scryptSync } = await import('crypto');
+  const secret = Buffer.from('stream-layout roundtrip payload');
+  const salt = randomBytes(16);
+  const iv = randomBytes(12);
+  const key = scryptSync('pw', salt, 32, { N: 16384, r: 8, p: 1 });
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const ct = Buffer.concat([cipher.update(secret), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const streamPayload = Buffer.concat([Buffer.from([0x02]), salt, iv, ct, tag]);
+  const roundtrip = decryptData(streamPayload, 'pw');
+  streamLayoutOk = roundtrip.equals(secret);
+} catch (e) {
+  console.log('Stage 8 crypto error:', e.message);
+}
+test('Test 8.3: v2 stream-layout decryptData roundtrip (crypto)', streamLayoutOk);
+
+// 8.4: no shell interpolation in upload — source must not contain conn.exec
+let noShellExecOk = false;
+try {
+  const uploadSrc = readFileSync(join(__dirname, 'src', 'cli', 'commands', 'upload.js'), 'utf8');
+  noShellExecOk = !uploadSrc.includes('conn.exec');
+} catch (e) { }
+test('Test 8.4: Upload uses SFTP mkdir, zero conn.exec shell calls (upload)', noShellExecOk);
+
+// 8.5: staging index derives from directory (parallel stage → union)
+let raceOk = false;
+try {
+  writeFileSync(join(FIX_DIR, 'r1.txt'), '1');
+  writeFileSync(join(FIX_DIR, 'r2.txt'), '2');
+  // Two stages that overlap: stage one file each
+  run('stage r1.txt', FIX_DIR);
+  run('stage r2.txt', FIX_DIR);
+  // Index must list both files (directory-derived, not snapshot)
+  const idx = JSON.parse(readFileSync(join(FIX_DIR, '.cloudsync', 'staging', 'index.json'), 'utf8'));
+  raceOk = Array.isArray(idx.files) && idx.files.includes('r1.txt') && idx.files.includes('r2.txt');
+} catch (e) {
+  console.log('Stage 8 race error:', e.message);
+}
+test('Test 8.5: Staging index reflects directory state after parallel stages', raceOk);
+
+// 8.6: share with an absolute path argument must not mangle it
+let absPathOk = false;
+try {
+  const shareSrc = readFileSync(join(__dirname, 'src', 'cli', 'commands', 'share.js'), 'utf8');
+  absPathOk = shareSrc.includes('resolve(sharePath)') && !shareSrc.includes('join(process.cwd(), sharePath)');
+} catch (e) { }
+test('Test 8.6: share resolves absolute paths via resolve() (share)', absPathOk);
+
+// Teardown fix workspace
+safeRm(FIX_DIR);
+
+// ─────────────────────────────────────────────────────────────
+// STAGE 9: ENCRYPTED LIFECYCLE E2E & PACKAGE INTEGRITY GATES
+// (the gaps that let v2026.9.1/9.2 ship broken while green)
+// ─────────────────────────────────────────────────────────────
+console.log('\n[Stage 9] Encrypted Lifecycle E2E & Package Integrity');
+console.log('─'.repeat(60));
+
+const ENC_DIR = join(__dirname, 'test-workspace-encrypted');
+safeRm(ENC_DIR);
+mkdirSync(ENC_DIR, { recursive: true });
+
+// 9.1: encrypted commit — archive on disk must NOT be a plaintext zip
+run('init --host testserver.local --user admin --force', ENC_DIR);
+writeFileSync(join(ENC_DIR, 'secret.txt'), 'TOP SECRET payload — must survive encrypted roundtrip\n');
+run('stage secret.txt', ENC_DIR);
+const encCommit = runWithCode('commit "encrypted commit" --encrypt --passphrase "test-pass-123"', ENC_DIR);
+let archiveNotPlainZip = false;
+try {
+  const histDir = join(ENC_DIR, '.cloudsync', 'history', 'commits');
+  const zips = readdirSync(histDir).filter(f => f.endsWith('.zip'));
+  if (zips.length > 0) {
+    const head = readFileSync(join(histDir, zips[0]));
+    // ZIP local header magic is 0x50 0x4B ("PK"); an encrypted file must not start with it
+    archiveNotPlainZip = !(head[0] === 0x50 && head[1] === 0x4b);
+  }
+} catch (_) { }
+test('Test 9.1: Encrypted commit stores non-plaintext archive (commit --encrypt)', encCommit.code === 0 && archiveNotPlainZip, encCommit.output);
+
+// 9.2: encrypted rollback with WRONG passphrase — must fail, file must NOT change
+let encCommitId = null;
+try {
+  const idx = JSON.parse(readFileSync(join(ENC_DIR, '.cloudsync', 'history', 'index.json'), 'utf8'));
+  encCommitId = idx.length > 0 ? idx[0].id : null;
+} catch (_) { }
+
+writeFileSync(join(ENC_DIR, 'secret.txt'), 'WRONG STATE — wrong-passphrase rollback must not restore over this\n');
+const wrongPw = encCommitId ? runWithCode(`rollback ${encCommitId} --passphrase "wrong-password" --force`, ENC_DIR) : { code: 0, output: 'no commit id' };
+let wrongPwPreserved = false;
+try {
+  wrongPwPreserved = readFileSync(join(ENC_DIR, 'secret.txt'), 'utf8').startsWith('WRONG STATE');
+} catch (_) { }
+test('Test 9.2: Wrong passphrase rollback fails AND leaves file untouched', wrongPw.code !== 0 && wrongPwPreserved, `${wrongPw.output}\n   file preserved: ${wrongPwPreserved}`);
+
+// 9.3: encrypted rollback with CORRECT passphrase — content must restore byte-identical
+const rightPw = encCommitId ? runWithCode(`rollback ${encCommitId} --passphrase "test-pass-123" --force`, ENC_DIR) : { code: 1, output: 'no commit id' };
+let rightPwRestored = false;
+try {
+  rightPwRestored = readFileSync(join(ENC_DIR, 'secret.txt'), 'utf8') === 'TOP SECRET payload — must survive encrypted roundtrip\n';
+} catch (_) { }
+test('Test 9.3: Correct passphrase rollback restores byte-identical content', rightPw.code === 0 && rightPwRestored, `${rightPw.output}\n   file restored: ${rightPwRestored}`);
+
+// 9.4: commit archive must not recursively include .cloudsync history (H3).
+// Scan the plaintext Stage-2 workspace's latest commit zip.
+let noSelfInclusion = false;
+try {
+  const plainHist = join(TEST_DIR, '.cloudsync', 'history', 'commits');
+  const plainZips = readdirSync(plainHist).filter(f => f.endsWith('.zip'));
+  if (plainZips.length > 0) {
+    const plainData = readFileSync(join(plainHist, plainZips[0]));
+    const text = plainData.toString('latin1');
+    noSelfInclusion = !text.includes('.cloudsync/history') && !text.includes('.cloudsync\\history');
+  }
+} catch (_) { }
+test('Test 9.4: Commit archives never include .cloudsync history (self-inflation)', noSelfInclusion);
+
+// 9.5: npm pack size budget — the published tarball must stay small (H4)
+let packSizeOk = false;
+let packSizeKb = -1;
+try {
+  const packJson = execSync('npm pack --dry-run --json', { cwd: __dirname, timeout: 90000, encoding: 'utf8' });
+  const packInfo = JSON.parse(packJson);
+  const tarballBytes = packInfo[0]?.size ?? 0;
+  packSizeKb = Math.round(tarballBytes / 1024);
+  packSizeOk = tarballBytes > 0 && tarballBytes < 2 * 1024 * 1024; // 2 MB budget
+  console.log(`   (tarball: ${packSizeKb} KB / budget 2048 KB)`);
+} catch (e) {
+  console.log('   (npm pack check failed:', e.message.slice(0, 100), ')');
+}
+test('Test 9.5: npm tarball stays under 2 MB (files allowlist enforced)', packSizeOk);
+
+// Teardown encrypted workspace
+safeRm(ENC_DIR);
+
+// ─────────────────────────────────────────────────────────────
 // CLEANUP & SUMMARY
 // ─────────────────────────────────────────────────────────────
 // Teardown test workspace
@@ -351,7 +536,7 @@ console.log(`   📈 Total:  ${passed + failed}`);
 console.log('━'.repeat(65));
 
 if (failed === 0) {
-  console.log(`\nAll ${passed} tests across all 7 stages passed! CLI is production ready.`);
+  console.log(`\nAll ${passed} tests across all 9 stages passed! CLI is production ready.`);
   console.log('Next: run "node test-integration.js" for the end-to-end share -> fetch test.\n');
   process.exit(0);
 } else {

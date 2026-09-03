@@ -41,12 +41,23 @@ const commitCommand = new Command('commit')
       return;
     }
 
-    const stagedFiles = readdirSync(stagingDir).filter(f => f !== 'index.json');
+    const stagedFiles = readdirSync(stagingDir).filter(f => f !== 'index.json' && !f.endsWith('.tmp'));
 
     if (stagedFiles.length === 0 && !options.amend) {
       failWith('Nothing to commit. Stage some files first: cloudsync stage <files>');
       return;
     }
+
+    // Load the staged-name -> original-path mapping recorded by `stage`.
+    // Archive entries are named with the ORIGINAL relative path so a
+    // rollback restores "data/sample.txt", not the flattened copy.
+    let stagedMap = null;
+    try {
+      const idx = safeJsonParse(readFileSync(join(stagingDir, 'index.json'), 'utf8'), {});
+      if (Array.isArray(idx.entries)) stagedMap = new Map(idx.entries.map(e => [e.staged, e.path]));
+    } catch (_) { }
+    const originalPathOf = (flatName) => (stagedMap && stagedMap.has(flatName)) ? stagedMap.get(flatName) : flatName;
+    const commitFiles = stagedFiles.map(originalPathOf);
 
     const commitMessage = (message && String(message).trim()) || '';
     if (!commitMessage) {
@@ -96,7 +107,7 @@ const commitCommand = new Command('commit')
     // Create zip archive
     const archivePath = join(historyDir, `${commitId}.zip`);
     mkdirSync(historyDir, { recursive: true });
-    await createStagedArchive(stagingDir, stagedFiles, archivePath);
+    await createStagedArchive(stagingDir, stagedFiles, archivePath, originalPathOf);
 
     // Apply AES-256-GCM encryption if requested
     let isEncrypted = false;
@@ -124,7 +135,7 @@ const commitCommand = new Command('commit')
       id: commitId,
       message: commitMessage,
       timestamp,
-      files: stagedFiles,
+      files: commitFiles,
       encrypted: isEncrypted,
       author: process.env.USER || process.env.USERNAME || 'unknown'
     };
@@ -162,7 +173,7 @@ const commitCommand = new Command('commit')
     }
 
     // Display commit info
-    logOperation('commit', `Committed: ${commitMessage}`, { files: stagedFiles, commitId });
+    logOperation('commit', `Committed: ${commitMessage}`, { files: commitFiles, commitId });
     console.log(chalk.green('\nCommitted successfully!'));
     console.log(chalk.gray('-'.repeat(60)));
     console.log(chalk.cyan(`   Commit ID: ${commitId}`));
@@ -179,7 +190,7 @@ function generateCommitId() {
   return `${timestamp}-${random}`;
 }
 
-async function createStagedArchive(stagingDir, files, outputPath) {
+async function createStagedArchive(stagingDir, files, outputPath, originalPathOf) {
   return new Promise((resolve, reject) => {
     const output = createWriteStream(outputPath);
     const archive = new ZipArchive({ zlib: { level: 9 } });
@@ -189,11 +200,13 @@ async function createStagedArchive(stagingDir, files, outputPath) {
     archive.pipe(output);
 
     files.forEach(f => {
-      const safeName = f.replace(/[\\/]/g, '__');
-      const stagedFilePath = join(stagingDir, safeName);
-      const actualPath = existsSync(stagedFilePath) ? stagedFilePath : join(stagingDir, f);
-      if (existsSync(actualPath)) {
-        archive.file(actualPath, { name: f });
+      // `f` is the flat staged filename; the archive entry is named with
+      // the ORIGINAL relative path (via the staging index mapping) so
+      // rollback extracts to the real location.
+      const entryName = originalPathOf ? originalPathOf(f) : f;
+      const stagedFilePath = join(stagingDir, f);
+      if (existsSync(stagedFilePath)) {
+        archive.file(stagedFilePath, { name: entryName });
       }
     });
 

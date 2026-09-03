@@ -8,7 +8,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { existsSync, readdirSync, unlinkSync, writeFileSync, renameSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync, renameSync } from 'fs';
 import { join } from 'path';
 import { failWith, okWith } from '../../utils/exit.js';
 
@@ -95,16 +95,30 @@ const unstageCommand = new Command('unstage')
       console.log(chalk.gray('   cloudsync unstage --all      # Unstage all files'));
     }
 
-    // Update index atomically
-    const remainingFiles = readdirSync(stagingDir).filter(f => f !== 'index.json');
-    if (remainingFiles.length > 0) {
-      const tmp = indexFile + '.tmp';
+    // Rebuild the index from disk, preserving the staged -> original-path
+    // mapping for every file that is still staged.
+    const remainingFlat = readdirSync(stagingDir).filter(f => f !== 'index.json' && !f.endsWith('.tmp'));
+    if (remainingFlat.length > 0) {
+      let oldEntries = [];
+      try {
+        const old = JSON.parse(readFileSync(indexFile, 'utf8'));
+        if (Array.isArray(old.entries)) oldEntries = old.entries;
+      } catch (_) { }
+      const oldMap = new Map(oldEntries.map(e => [e.staged, e.path]));
+
+      const entries = remainingFlat.map(staged => ({
+        staged,
+        path: oldMap.get(staged) || staged
+      }));
+
+      const tmp = indexFile + `.${process.pid}.tmp`;
       writeFileSync(tmp, JSON.stringify({
-        files: remainingFiles,
+        entries,
+        files: entries.map(e => e.path),
         timestamp: new Date().toISOString()
       }, null, 2));
       try { renameSync(tmp, indexFile); } catch (_) {
-        writeFileSync(indexFile, JSON.stringify({ files: remainingFiles, timestamp: new Date().toISOString() }, null, 2));
+        writeFileSync(indexFile, JSON.stringify({ entries, files: entries.map(e => e.path), timestamp: new Date().toISOString() }, null, 2));
         try { unlinkSync(tmp); } catch (__) { }
       }
     } else if (existsSync(indexFile)) {

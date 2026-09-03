@@ -10,7 +10,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { existsSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, statSync, renameSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, statSync, renameSync, unlinkSync } from 'fs';
 import { join, relative, basename } from 'path';
 import { formatBytes } from '../../utils/helpers.js';
 import { safePath, isSafeFilename } from '../../utils/security.js';
@@ -115,14 +115,24 @@ const stageCommand = new Command('stage')
     }
   });
 
+/**
+ * Staged files are stored flat (subdirectory separators become "__") so the
+ * staging dir stays a single level. The original relative path is recorded in
+ * the staging index so commit can name archive entries correctly — otherwise
+ * a rollback would restore "data__sample.txt" instead of "data/sample.txt".
+ */
+function flattenName(relPath) {
+  return relPath.replace(/[\\/]/g, '__');
+}
+
 function stageFile(filePath, stagedFiles, stagingDir, verbose, rejectedFiles, originalArg) {
   try {
-    const relPath = originalArg || relative(process.cwd(), filePath);
-    const safeName = relPath.replace(/[\\/]/g, '__');
+    const relPath = (originalArg || relative(process.cwd(), filePath)).replace(/\\/g, '/');
+    const safeName = flattenName(relPath);
     const stagedPath = join(stagingDir, safeName);
 
     copyFileSync(filePath, stagedPath);
-    stagedFiles.push(relPath);
+    stagedFiles.push({ staged: safeName, path: relPath });
 
     if (verbose) {
       console.log(chalk.green(`   + ${relPath}`));
@@ -134,20 +144,34 @@ function stageFile(filePath, stagedFiles, stagingDir, verbose, rejectedFiles, or
 }
 
 function showStagedFiles(stagingDir, verbose) {
-  const files = readdirSync(stagingDir).filter(f => f !== 'index.json');
+  // Prefer the index mapping (original paths) when present; fall back to
+  // the flat directory listing for workspaces staged before the mapping.
+  let display = null;
+  try {
+    const idx = JSON.parse(readFileSync(join(stagingDir, 'index.json'), 'utf8'));
+    if (Array.isArray(idx.entries) && idx.entries.length > 0) {
+      display = idx.entries.map(e => e.path);
+    } else if (Array.isArray(idx.files)) {
+      display = idx.files;
+    }
+  } catch (_) { }
+  if (!display) {
+    display = readdirSync(stagingDir).filter(f => f !== 'index.json');
+  }
 
   console.log(chalk.cyan('\nStaged Files:'));
   console.log(chalk.gray('-'.repeat(40)));
 
-  if (files.length === 0) {
+  if (display.length === 0) {
     console.log(chalk.yellow('   No files staged'));
     console.log(chalk.gray('\n   Usage:'));
     console.log(chalk.gray('      cloudsync stage <files...>  # Stage specific files'));
     console.log(chalk.gray('      cloudsync stage --all       # Stage all'));
   } else {
-    files.forEach(f => {
+    display.forEach(f => {
       try {
-        const stat = statSync(join(stagingDir, f));
+        const flat = flattenName(f);
+        const stat = statSync(join(stagingDir, flat));
         const size = formatBytes(stat.size);
         console.log(chalk.green('   + ') + chalk.white(f) + chalk.gray(` (${size})`));
       } catch (e) {
@@ -156,27 +180,58 @@ function showStagedFiles(stagingDir, verbose) {
     });
 
     console.log(chalk.gray('-'.repeat(40)));
-    console.log(chalk.gray(`   ${files.length} file(s) staged`));
+    console.log(chalk.gray(`   ${display.length} file(s) staged`));
   }
 }
 
 function saveStagedIndex(files, verbose) {
-  const indexFile = join(process.cwd(), '.cloudsync', 'staging', 'index.json');
-  // Atomic write: temp + rename — prevents races with concurrent stage invocations
-  const tmp = indexFile + '.tmp';
+  const stagingDir = join(process.cwd(), '.cloudsync', 'staging');
+  const indexFile = join(stagingDir, 'index.json');
+
+  // Build the staged-name -> original-path mapping. Union with any entries
+  // already recorded (concurrent stage invocations), then intersect with the
+  // files that actually exist on disk right now so unstage removals stick.
+  const byStaged = new Map();
+  for (const f of files) {
+    if (f && typeof f === 'object') byStaged.set(f.staged, f.path);
+  }
+  try {
+    const existing = JSON.parse(readFileSync(indexFile, 'utf8'));
+    if (Array.isArray(existing.entries)) {
+      for (const e of existing.entries) byStaged.set(e.staged, e.path);
+    }
+    // Legacy index format (flat string list, pre-mapping) — carry over as-is
+    if (Array.isArray(existing.files)) {
+      for (const f of existing.files) byStaged.set(f, f);
+    }
+  } catch (_) { /* no index yet */ }
+
+  let onDisk;
+  try {
+    onDisk = new Set(readdirSync(stagingDir).filter(f => f !== 'index.json' && !f.endsWith('.tmp')));
+  } catch (_) {
+    onDisk = null;
+  }
+
+  const entries = [...byStaged.entries()]
+    .map(([staged, path]) => ({ staged, path }))
+    .filter(e => onDisk === null || onDisk.has(e.staged));
+
+  const tmp = indexFile + `.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify({
-    files,
+    entries,
+    files: entries.map(e => e.path), // backward-compatible flat view
     timestamp: new Date().toISOString()
   }, null, 2));
   try {
     renameSync(tmp, indexFile);
   } catch (e) {
-    // Fallback: just copy if rename across mount fails
-    writeFileSync(indexFile, JSON.stringify({ files, timestamp: new Date().toISOString() }, null, 2));
+    // Fallback: direct write if rename fails (e.g. across mounts)
+    writeFileSync(indexFile, JSON.stringify({ entries, files: entries.map(e => e.path), timestamp: new Date().toISOString() }, null, 2));
     try { unlinkSync(tmp); } catch (_) { }
   }
 
-  if (verbose) console.log(chalk.gray(`Staging index saved`));
+  if (verbose) console.log(chalk.gray(`Staging index saved (${entries.length} files)`));
 }
 
 export default stageCommand;

@@ -16,7 +16,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { existsSync, writeFileSync, mkdirSync, createReadStream, statSync, createWriteStream, rmSync } from 'fs';
-import { join, basename, normalize } from 'path';
+import { join, basename, resolve } from 'path';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import http from 'http';
 import url from 'url';
@@ -68,8 +68,9 @@ const shareCommand = new Command('share')
       return;
     }
 
-    // Resolve path (resolve to absolute, then normalize to defend against .. tricks)
-    const targetPath = normalize(join(process.cwd(), sharePath));
+    // resolve() handles both relative and absolute inputs correctly
+    // (unlike join(), which mangles absolute paths by prefixing cwd)
+    const targetPath = resolve(sharePath);
 
     if (!existsSync(targetPath)) {
       failWith(`❌ Path not found: ${targetPath}`);
@@ -328,7 +329,17 @@ async function startShareServer(session, options, verbose) {
             try { res.end(); } catch (_) {}
           });
           archive.pipe(res);
-          archive.directory(target, false);
+          // Exclude dot-directories — sharing "." must never leak the
+          // sender's .cloudsync/ internals (sessions, history, password hash)
+          archive.directory(target, false, (entry) => {
+            const rel = entry.name.replace(/^\.\//, '');
+            const parts = rel.split('/');
+            const first = parts[0] || '';
+            if (first.startsWith('.') && first.length > 1) {
+              return false; // drop the entire dot-directory subtree
+            }
+            return entry;
+          });
           archive.finalize().catch((e) => {
             console.error('Finalize error:', e.message);
           });

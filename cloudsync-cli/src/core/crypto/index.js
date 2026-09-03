@@ -5,11 +5,11 @@
  * Files above STREAM_THRESHOLD are encrypted/decrypted as streams so large
  * snapshots never need to fit in memory; smaller ones use the buffer path.
  *
- * On-disk layout (v2 — current):
- *   [format byte][salt 16B][iv 12B][ciphertext...][auth tag 16B]
- *     format byte:
- *       0x01 = buffer-style (whole payload in memory)
- *       0x02 = streaming-style (used when size > STREAM_THRESHOLD)
+ * On-disk layouts (v2 — current):
+ *   0x01 buffer-style: [fmt(1B)][salt 16B][iv 12B][tag 16B][ciphertext]
+ *   0x02 stream-style: [fmt(1B)][salt 16B][iv 12B][ciphertext...][tag 16B]
+ *     — the tag is at the END of stream-style files (written after the
+ *       ciphertext drains). Used when size > STREAM_THRESHOLD.
  *
  * The format byte lets decryptFile and extractArchive route to the right
  * decoder. Older v1 payloads (no header, [salt|iv|tag|ciphertext]) are
@@ -58,8 +58,11 @@ export function encryptData(data, passphrase) {
 }
 
 /**
- * Decrypt an AES-256-GCM payload (for small payloads).
- * Accepts both v1 ([salt|iv|tag|ciphertext]) and v2 ([fmt|salt|iv|tag|ciphertext]).
+ * Decrypt an AES-256-GCM payload in memory.
+ * Accepts all on-disk layouts:
+ * - v2 buffer: [fmt(0x01)][salt][iv][tag][ciphertext]
+ * - v2 stream: [fmt(0x02)][salt][iv][ciphertext...][tag]  (tag at the END)
+ * - v1 legacy: [salt][iv][tag][ciphertext]                 (no header)
  */
 export function decryptData(encryptedData, passphrase) {
   if (!passphrase) throw new Error('Passphrase is required for decryption');
@@ -70,8 +73,18 @@ export function decryptData(encryptedData, passphrase) {
   let salt, iv, tag, ciphertext;
   const firstByte = encryptedData[0];
 
-  if (firstByte === FORMAT_V2_BUFFER || firstByte === FORMAT_V2_STREAM) {
-    // v2 layout
+  if (firstByte === FORMAT_V2_STREAM) {
+    // v2 stream layout — tag is the last 16 bytes
+    const headerLen = 1 + SALT_LENGTH + IV_LENGTH;
+    if (encryptedData.length < headerLen + TAG_LENGTH) {
+      throw new Error('Invalid or corrupted encrypted payload');
+    }
+    salt = encryptedData.subarray(1, 1 + SALT_LENGTH);
+    iv = encryptedData.subarray(1 + SALT_LENGTH, headerLen);
+    tag = encryptedData.subarray(encryptedData.length - TAG_LENGTH);
+    ciphertext = encryptedData.subarray(headerLen, encryptedData.length - TAG_LENGTH);
+  } else if (firstByte === FORMAT_V2_BUFFER) {
+    // v2 buffer layout — tag sits right after the header
     let offset = 1;
     salt = encryptedData.subarray(offset, offset + SALT_LENGTH);
     offset += SALT_LENGTH;
