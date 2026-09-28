@@ -177,12 +177,15 @@ async function downloadWithProtocol(profile, options, verbose) {
         if (sftpErr) { conn.end(); return reject(sftpErr); }
         if (verbose) console.log(chalk.gray('   SFTP session established'));
 
-        // Resolve the remote upload dir, expanding "~" to the remote home
-        const remotePath = profile.path || '~/.cloudsync/uploads';
-        const remoteDir = await sftpRealpath(sftp, remotePath);
-        if (verbose) console.log(chalk.gray(`   Remote directory: ${remoteDir}`));
-
+        // Everything below runs inside this async callback, so every await
+        // must be guarded — an escaping rejection here would surface as an
+        // unhandled promise rejection instead of a clean command failure.
         try {
+          // Resolve the remote upload dir, expanding "~" to the remote home
+          const remotePath = profile.path || '~/.cloudsync/uploads';
+          const remoteDir = await sftpRealpath(sftp, remotePath);
+          if (verbose) console.log(chalk.gray(`   Remote directory: ${remoteDir}`));
+
           const downloaded = [];
           const archives = await sftpListDir(sftp, remoteDir);
           const zipFiles = archives.filter(f => f.isFile && f.name.endsWith('.zip'));
@@ -213,7 +216,7 @@ async function downloadWithProtocol(profile, options, verbose) {
           resolve({ files: downloaded });
         } catch (e) {
           conn.end();
-          reject(new Error(`Remote listing failed: ${e.message}`));
+          reject(new Error(`Remote download failed: ${e.message}`));
         }
       });
     });
