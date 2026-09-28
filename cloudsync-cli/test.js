@@ -493,18 +493,26 @@ try {
 test('Test 9.3: Correct passphrase rollback restores byte-identical content', rightPw.code === 0 && rightPwRestored, `${rightPw.output}\n   file restored: ${rightPwRestored}`);
 
 // 9.4: commit archive must not recursively include .cloudsync history (H3).
-// Scan the plaintext Stage-2 workspace's latest commit zip.
+// Scan EVERY commit zip in the plaintext Stage-2 workspace. readdirSync
+// order is not guaranteed, so checking only plainZips[0] could inspect a
+// stale zip while skipping the one actually under test.
 let noSelfInclusion = false;
+let scannedZips = 0;
 try {
   const plainHist = join(TEST_DIR, '.cloudsync', 'history', 'commits');
   const plainZips = readdirSync(plainHist).filter(f => f.endsWith('.zip'));
-  if (plainZips.length > 0) {
-    const plainData = readFileSync(join(plainHist, plainZips[0]));
-    const text = plainData.toString('latin1');
-    noSelfInclusion = !text.includes('.cloudsync/history') && !text.includes('.cloudsync\\history');
+  scannedZips = plainZips.length;
+  noSelfInclusion = scannedZips > 0;
+  for (const z of plainZips) {
+    const text = readFileSync(join(plainHist, z)).toString('latin1');
+    if (text.includes('.cloudsync/history') || text.includes('.cloudsync\\history') ||
+        text.includes('.cloudsync/staging') || text.includes('.cloudsync\\staging')) {
+      noSelfInclusion = false;
+      break;
+    }
   }
 } catch (_) { }
-test('Test 9.4: Commit archives never include .cloudsync history (self-inflation)', noSelfInclusion);
+test(`Test 9.4: Commit archives never include .cloudsync history (self-inflation) [${scannedZips} zip(s) scanned]`, noSelfInclusion);
 
 // 9.5: npm pack size budget — the published tarball must stay small (H4)
 let packSizeOk = false;
